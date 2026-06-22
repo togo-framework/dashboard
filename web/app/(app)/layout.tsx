@@ -3,6 +3,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
@@ -28,7 +29,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<any>(null);
   const [resources, setResources] = useState<{ name: string; table: string }[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [live, setLive] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     auth.me().then((u) => {
@@ -36,6 +39,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       setMe(u);
     });
     fetch(`${API}/api/_meta/resources`).then((r) => r.json()).then((d) => setResources(d.resources ?? [])).catch(() => {});
+    // Realtime connection status (SSE; works with the default realtime plugin).
+    const es = new EventSource(`${API}/events`);
+    es.onopen = () => setLive(true);
+    es.onerror = () => setLive(false);
+    return () => es.close();
   }, []);
 
   useEffect(() => {
@@ -58,8 +66,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="space-y-1">
-          <SideLink href="/dashboard" icon={Icon.grid} label={trans("nav.dashboard", "Dashboard")} />
-          <SideLink href="/admin" icon={Icon.table} label={trans("nav.admin", "Admin")} />
+          <SideLink href="/dashboard" icon={Icon.grid} label={trans("nav.dashboard", "Dashboard")} active={pathname === "/dashboard"} />
+          <SideLink href="/admin" icon={Icon.table} label={trans("nav.admin", "Admin")} active={pathname === "/admin"} />
         </nav>
 
         {resources.length > 0 && (
@@ -67,20 +75,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wide text-slate-500">{trans("nav.resources", "Resources")}</p>
             <nav className="space-y-1">
               {resources.map((r) => (
-                <SideLink key={r.table} href={`/admin/${r.table}`} icon={Icon.table} label={r.name || r.table} />
+                <SideLink key={r.table} href={`/admin/${r.table}`} icon={Icon.table} label={r.name || r.table} active={pathname === `/admin/${r.table}`} />
               ))}
             </nav>
           </div>
         )}
 
         <div className="mt-auto">
-          <SideLink href="/profile" icon={Icon.user} label={trans("nav.profile", "Profile")} />
+          <SideLink href="/profile" icon={Icon.user} label={trans("nav.profile", "Profile")} active={pathname === "/profile"} />
         </div>
       </aside>
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end border-b border-slate-800 bg-slate-900/50 px-6 py-3">
+        <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/50 px-6 py-3">
+          <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+            <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400" : "bg-slate-600"}`} />
+            {live ? trans("nav.live", "Realtime connected") : trans("nav.offline", "Realtime offline")}
+          </span>
           <div className="relative" ref={menuRef}>
             <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-2 rounded-full py-1 pl-1 pr-3 transition hover:bg-white/5">
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-500 text-sm font-semibold text-white">{initial}</span>
@@ -106,9 +118,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function SideLink({ href, icon, label }: { href: string; icon: string; label: string }) {
+function SideLink({ href, icon, label, active }: { href: string; icon: string; label: string; active?: boolean }) {
   return (
-    <Link href={href} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white">
+    <Link
+      href={href}
+      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${
+        active ? "bg-violet-600/15 font-medium text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"
+      }`}
+    >
       <NavIcon d={icon} />
       <span className="truncate capitalize">{label}</span>
     </Link>
