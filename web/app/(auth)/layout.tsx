@@ -1,11 +1,7 @@
-// Auth layout (prism-style): a full-screen, centered backdrop for all auth pages
-// (login, register, reset, two-factor). Extend by adding pages under (auth).
+// Auth layout — full-bleed. AuthCard renders its own full-screen split (form +
+// brand panel), so this layout must not center or constrain it.
 import { ReactNode } from "react";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 p-4 dark:from-slate-950 dark:to-slate-900">
-      {children}
-    </div>
-  );
+  return <div className="min-h-screen w-full">{children}</div>;
 }
