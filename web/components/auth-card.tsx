@@ -15,19 +15,18 @@ export function AuthCard({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  // Card only — the (auth) route-group layout supplies the full-screen backdrop.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 p-4 dark:from-slate-950 dark:to-slate-900">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white/80 p-8 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-lg font-bold text-white dark:bg-white dark:text-slate-900">
-            t
-          </div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
-          {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white/80 p-8 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
+      <div className="mb-6 text-center">
+        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-lg font-bold text-white dark:bg-white dark:text-slate-900">
+          t
         </div>
-        {children}
-        {footer && <div className="mt-6 text-center text-sm text-slate-500">{footer}</div>}
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
+      {children}
+      {footer && <div className="mt-6 text-center text-sm text-slate-500">{footer}</div>}
     </div>
   );
 }

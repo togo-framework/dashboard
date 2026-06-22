@@ -30,20 +30,9 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl p-8">
-      <header className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{trans("dashboard.title", "Dashboard")}</h1>
-          <p className="text-slate-500">{trans("dashboard.welcome", "Welcome back")}, {me.email}</p>
-        </div>
-        <div className="flex gap-3 text-sm">
-          <a href="/profile" className="rounded-lg border border-slate-300 px-3 py-1.5 dark:border-slate-700">{trans("auth.profile.title", "Profile")}</a>
-          <button
-            onClick={async () => { await auth.logout(); window.location.href = "/login"; }}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-white dark:bg-white dark:text-slate-900"
-          >
-            {trans("dashboard.sign_out", "Sign out")}
-          </button>
-        </div>
+      <header className="mb-8">
+        <h1 className="text-2xl font-semibold">{trans("dashboard.title", "Dashboard")}</h1>
+        <p className="text-slate-500">{trans("dashboard.welcome", "Welcome back")}, {me.email}</p>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-3">
