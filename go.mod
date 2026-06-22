@@ -2,9 +2,9 @@ module github.com/togo-framework/dashboard
 
 go 1.26.4
 
-require github.com/togo-framework/togo v0.18.0
+require github.com/togo-framework/togo v0.19.0
 
-require github.com/togo-framework/auth v0.3.1
+require github.com/togo-framework/auth v0.8.0
 
 require (
 	github.com/go-chi/chi/v5 v5.1.0 // indirect

@@ -1,8 +1,11 @@
-// Shared, self-contained auth layout (prism-inspired): centered card on a soft
-// gradient. No external UI deps so it compiles in any togo app after injection.
+// Prism-style auth shell: form on the left, a branded gradient panel with an icon
+// on the right. Self-contained (Tailwind only) so it compiles in any togo app.
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
+import { trans } from "@/lib/i18n";
+
+const APP = process.env.NEXT_PUBLIC_APP_NAME ?? "togo";
 
 export function AuthCard({
   title,
@@ -15,18 +18,39 @@ export function AuthCard({
   children: ReactNode;
   footer?: ReactNode;
 }) {
-  // Card only — the (auth) route-group layout supplies the full-screen backdrop.
   return (
-    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white/80 p-8 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-      <div className="mb-6 text-center">
-        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-lg font-bold text-white dark:bg-white dark:text-slate-900">
-          t
+    <div className="grid min-h-screen md:grid-cols-2">
+      {/* Form side */}
+      <div className="flex items-center justify-center bg-slate-950 px-6 py-12 text-white">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          {subtitle && <p className="mt-1 mb-6 text-sm text-slate-400">{subtitle}</p>}
+          {children}
+          {footer && <div className="mt-6 text-sm text-slate-500">{footer}</div>}
         </div>
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
-      {children}
-      {footer && <div className="mt-6 text-center text-sm text-slate-500">{footer}</div>}
+
+      {/* Brand side */}
+      <div className="relative hidden items-center justify-center overflow-hidden bg-gradient-to-br from-violet-500 to-indigo-600 md:flex">
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{ backgroundImage: "radial-gradient(circle, rgba(255,255,255,.5) 1px, transparent 1px)", backgroundSize: "22px 22px" }}
+        />
+        <div className="relative z-10 text-center text-white">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-white/15 backdrop-blur">
+            <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          </div>
+          <h2 className="text-3xl font-bold">{APP}</h2>
+          <p className="mt-2 text-white/70">{trans("auth.brand.tagline", "Authentication & identity")}</p>
+          <p className="mt-8 inline-flex items-center gap-1.5 text-sm text-white/60">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+            {trans("auth.brand.secured", "Secured & encrypted")}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -35,10 +59,10 @@ export function Field(props: React.InputHTMLAttributes<HTMLInputElement> & { lab
   const { label, ...rest } = props;
   return (
     <label className="mb-4 block">
-      <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
       <input
         {...rest}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
       />
     </label>
   );
@@ -48,14 +72,74 @@ export function Submit({ children, ...rest }: React.ButtonHTMLAttributes<HTMLBut
   return (
     <button
       {...rest}
-      className="w-full rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800 disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+      className="w-full rounded-lg bg-violet-600 px-4 py-2.5 font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
     >
       {children}
     </button>
   );
 }
 
+type Method = { name: string; label: string; type: string; url: string };
+
+// LoginMethods renders only the sign-in methods that are actually configured
+// (OAuth providers via auth-oauth, developer login via auth-dev) — fetched from
+// /api/auth/methods. Renders nothing if none are active.
+export function LoginMethods() {
+  const api = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
+  const [methods, setMethods] = useState<Method[]>([]);
+  useEffect(() => {
+    fetch(`${api}/api/auth/methods`).then((r) => r.json()).then((d) => setMethods(d.methods ?? [])).catch(() => {});
+  }, [api]);
+
+  if (methods.length === 0) return null;
+
+  async function dev(url: string) {
+    await fetch(`${api}${url}`, { method: "POST", credentials: "include" });
+    window.location.href = "/dashboard";
+  }
+
+  return (
+    <>
+      <Divider label={trans("auth.or", "or")} />
+      <div className="space-y-2">
+        {methods.map((m) =>
+          m.type === "dev" ? (
+            <button
+              key={m.name}
+              onClick={() => dev(m.url)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-900 px-4 py-2.5 font-mono text-sm text-slate-300 transition hover:bg-slate-800"
+            >
+              <span className="text-violet-400">›_</span> {m.label}
+            </button>
+          ) : (
+            <a
+              key={m.name}
+              href={`${api}${m.url}`}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800"
+            >
+              {m.name === "google" && (
+                <svg viewBox="0 0 24 24" className="h-4 w-4"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" /><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z" /></svg>
+              )}
+              {m.label}
+            </a>
+          )
+        )}
+      </div>
+    </>
+  );
+}
+
+export function Divider({ label }: { label: string }) {
+  return (
+    <div className="my-5 flex items-center gap-3 text-xs text-slate-600">
+      <span className="h-px flex-1 bg-slate-800" />
+      {label}
+      <span className="h-px flex-1 bg-slate-800" />
+    </div>
+  );
+}
+
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
-  return <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50">{children}</p>;
+  return <p className="mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{children}</p>;
 }

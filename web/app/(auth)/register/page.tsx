@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
-import { AuthCard, Field, Submit, ErrorText } from "@/components/auth-card";
+import { AuthCard, Field, Submit, ErrorText, LoginMethods } from "@/components/auth-card";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -29,7 +30,12 @@ export default function RegisterPage() {
     <AuthCard
       title={trans("auth.register.title", "Create your account")}
       subtitle={trans("auth.register.subtitle", "Get started in seconds")}
-      footer={<>{trans("auth.register.have_account", "Already registered?")} <a href="/login" className="font-medium text-slate-900 underline dark:text-white">{trans("auth.login.cta", "Sign in")}</a></>}
+      footer={
+        <span>
+          {trans("auth.register.have_account", "Already registered?")}{" "}
+          <Link href="/login" className="font-medium text-violet-400 hover:underline">{trans("auth.login.cta", "Sign in")}</Link>
+        </span>
+      }
     >
       <form onSubmit={submit}>
         <ErrorText>{err}</ErrorText>
@@ -37,6 +43,7 @@ export default function RegisterPage() {
         <Field label={trans("auth.field.password", "Password")} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
         <Submit disabled={busy}>{busy ? trans("auth.register.busy", "Creating…") : trans("auth.register.submit", "Create account")}</Submit>
       </form>
+      <LoginMethods />
     </AuthCard>
   );
 }
