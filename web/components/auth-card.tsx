@@ -3,6 +3,8 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
+import { ShieldCheck, Lock } from "lucide-react";
+import { Field as KitField, Input as KitInput, Button as KitButton } from "@togo-framework/ui";
 import { trans } from "@/lib/i18n";
 
 const APP = process.env.NEXT_PUBLIC_APP_NAME ?? "togo";
@@ -38,15 +40,12 @@ export function AuthCard({
         />
         <div className="relative z-10 text-center text-white">
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-white/15 backdrop-blur">
-            <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
-              <path d="m9 12 2 2 4-4" />
-            </svg>
+            <ShieldCheck className="h-10 w-10" />
           </div>
           <h2 className="text-3xl font-bold">{APP}</h2>
           <p className="mt-2 text-white/70">{trans("auth.brand.tagline", "Authentication & identity")}</p>
           <p className="mt-8 inline-flex items-center gap-1.5 text-sm text-white/60">
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+            <Lock className="h-4 w-4" />
             {trans("auth.brand.secured", "Secured & encrypted")}
           </p>
         </div>
@@ -55,27 +54,23 @@ export function AuthCard({
   );
 }
 
+// Field/Submit wrap the @togo-framework/ui kit so login/register stay unchanged.
 export function Field(props: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   const { label, ...rest } = props;
   return (
-    <label className="mb-4 block">
-      <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
-      <input
-        {...rest}
-        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-white outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
-      />
-    </label>
+    <div className="mb-4">
+      <KitField label={label}>
+        <KitInput {...rest} />
+      </KitField>
+    </div>
   );
 }
 
 export function Submit({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button
-      {...rest}
-      className="w-full rounded-lg bg-violet-600 px-4 py-2.5 font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
-    >
+    <KitButton variant="primary" className="w-full" {...rest}>
       {children}
-    </button>
+    </KitButton>
   );
 }
 

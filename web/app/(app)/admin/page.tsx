@@ -1,14 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Table2 } from "lucide-react";
+import { PageHeader, Card } from "@togo-framework/ui";
 import { trans } from "@/lib/i18n";
 
 const API = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
 
-// Admin home — auto-discovers generated resources from /api/_meta/resources, so
-// anything you `togo make:resource` shows up here automatically.
 export default function AdminHome() {
+  const router = useRouter();
   const [list, setList] = useState<{ name: string; table: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -21,25 +22,28 @@ export default function AdminHome() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold">{trans("admin.title", "Admin")}</h1>
+    <div className="mx-auto max-w-5xl p-8">
+      <PageHeader title={trans("admin.title", "Admin")} count={list.length} subtitle={trans("admin.subtitle", "Manage your resources")} />
       {loading ? (
         <p className="text-slate-500">{trans("common.loading", "Loading…")}</p>
       ) : list.length === 0 ? (
-        <p className="text-slate-500">
-          {trans("admin.empty_resources", "No resources yet — run `togo make:resource Post title:string` and they'll appear here.")}
-        </p>
+        <Card padded>
+          <p className="text-slate-400">{trans("admin.empty_resources", "No resources yet — run `togo make:resource Post title:string` and they'll appear here.")}</p>
+        </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((r) => (
-            <Link
-              key={r.table}
-              href={`/admin/${r.table}`}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-5 capitalize transition hover:border-violet-500/50 hover:bg-slate-800/60"
-            >
-              <span className="text-base font-medium">{r.name || r.table}</span>
-              <p className="mt-1 text-xs text-slate-500">/api/{r.table}</p>
-            </Link>
+            <button key={r.table} onClick={() => router.push(`/admin/${r.table}`)} className="text-start">
+              <Card padded className="transition hover:border-violet-500/50">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600/15 text-violet-400"><Table2 className="h-4 w-4" /></span>
+                  <span>
+                    <span className="block font-medium capitalize">{r.name || r.table}</span>
+                    <span className="block text-xs text-slate-500">/api/{r.table}</span>
+                  </span>
+                </div>
+              </Card>
+            </button>
           ))}
         </div>
       )}
