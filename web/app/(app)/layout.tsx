@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { LayoutGrid, Table2, User, LogOut, Layers } from "lucide-react";
-import { AdminShell, UserMenu, RealtimeDot } from "@togo-framework/ui";
+import { AdminShell, UserDropdown, RealtimeDot } from "@togo-framework/ui";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
 
@@ -49,7 +49,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       onNavigate={(key) => router.push(key)}
       headerLeft={<RealtimeDot connected={live} label={live ? trans("nav.live", "Realtime connected") : trans("nav.offline", "Offline")} />}
       headerRight={
-        <UserMenu
+        <UserDropdown
           email={me?.email ?? "…"}
           items={[
             { label: trans("nav.profile", "Profile"), icon: <User className="h-4 w-4" />, onClick: () => router.push("/profile") },
