@@ -2,17 +2,18 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
-import { LayoutGrid, Table2, User, LogOut, Layers, ChevronDown } from "lucide-react";
+import { LayoutGrid, Table2, User, LogOut, Layers, ChevronDown, Users, Mail } from "lucide-react";
 import {
   SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter,
   SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
   SidebarInset, SidebarTrigger,
   Avatar, AvatarFallback,
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-  StatusBadge,
+  StatusBadge, ImpersonationBanner, useLanguage,
 } from "@togo-framework/ui";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
+import { getImpersonation, onImpersonationChange, clearImpersonation, type Impersonation } from "@/lib/impersonation";
 
 const API = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
 const APP = process.env.NEXT_PUBLIC_APP_NAME ?? "togo";
@@ -20,9 +21,11 @@ const APP = process.env.NEXT_PUBLIC_APP_NAME ?? "togo";
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { language } = useLanguage();
   const [me, setMe] = useState<any>(null);
   const [resources, setResources] = useState<{ name: string; table: string }[]>([]);
   const [live, setLive] = useState(false);
+  const [imp, setImp] = useState<Impersonation>(null);
 
   useEffect(() => {
     auth.me().then((u) => {
@@ -36,9 +39,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return () => es.close();
   }, [router]);
 
+  useEffect(() => {
+    setImp(getImpersonation());
+    return onImpersonationChange(() => setImp(getImpersonation()));
+  }, []);
+
   const primary = [
     { href: "/dashboard", label: trans("nav.dashboard", "Dashboard"), icon: <LayoutGrid className="h-4 w-4" /> },
     { href: "/admin", label: trans("nav.admin", "Admin"), icon: <Table2 className="h-4 w-4" /> },
+    { href: "/admin/users", label: trans("nav.users", "Users"), icon: <Users className="h-4 w-4" /> },
+    { href: "/admin/mail", label: trans("nav.mail", "Mail"), icon: <Mail className="h-4 w-4" /> },
   ];
   const initial = (me?.email ?? "?").charAt(0).toUpperCase();
 
@@ -101,6 +111,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </Sidebar>
 
       <SidebarInset>
+        <ImpersonationBanner
+          email={imp?.email}
+          language={language}
+          onStop={() => { clearImpersonation(); router.push("/admin/users"); }}
+        />
         <header className="flex h-14 items-center justify-between gap-2 border-b border-border px-4">
           <div className="flex items-center gap-3">
             <SidebarTrigger />
