@@ -17,6 +17,9 @@ func init() {
 		if k.Log != nil {
 			k.Log.Info("dashboard plugin active", "ui", "auth suite injected")
 		}
+		// Mount the dashboard's own admin surface: SMTP/mail config + test-send.
+		// Runs after auth (PriorityLate+5) so the auth service is on the kernel.
+		mountMailRoutes(k)
 		return nil
 	})
 }
