@@ -40,7 +40,7 @@ export default function ProfilePage() {
       <ErrorText>{err}</ErrorText>
       {msg && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40">{msg}</p>}
 
-      <section className="rounded-xl border border-slate-200 p-6 dark:border-slate-800">
+      <section className="border border-slate-200 p-6 dark:border-slate-800">
         <h2 className="mb-4 font-medium">{trans("auth.profile.change_pw", "Change password")}</h2>
         <form onSubmit={changePw}>
           <Field label={trans("auth.profile.current_pw", "Current password")} type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} required />
@@ -49,7 +49,7 @@ export default function ProfilePage() {
         </form>
       </section>
 
-      <section className="rounded-xl border border-slate-200 p-6 dark:border-slate-800">
+      <section className="border border-slate-200 p-6 dark:border-slate-800">
         <h2 className="mb-4 font-medium">{trans("auth.profile.pin_title", "Lock-screen PIN")}</h2>
         <form onSubmit={savePin}>
           <Field label={trans("auth.profile.pin_label", "PIN (min 4 digits)")} type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} required minLength={4} />
@@ -57,7 +57,7 @@ export default function ProfilePage() {
         </form>
       </section>
 
-      <section className="rounded-xl border border-slate-200 p-6 dark:border-slate-800">
+      <section className="border border-slate-200 p-6 dark:border-slate-800">
         <h2 className="mb-2 font-medium">{trans("auth.2fa.title", "Two-factor authentication")}</h2>
         <a href="/two-factor" className="text-sm font-medium text-slate-900 underline dark:text-white">{trans("auth.profile.manage_2fa", "Manage 2FA →")}</a>
       </section>
