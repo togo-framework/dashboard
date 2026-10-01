@@ -29,9 +29,9 @@ import (
 // pattern Fort uses — so it works across every SQL driver togo supports.
 
 const (
-	csrfCookieName = "togo_csrf"  // matches the auth plugin's CSRF cookie
-	mailKVKey      = "smtp"       // dashboard_kv row holding the SMTP config JSON
-	maskedSecret   = "••••••••" //nolint:gosmopolitan // UI mask, not a credential
+	csrfCookieName = "togo_csrf" // matches the auth plugin's CSRF cookie
+	mailKVKey      = "smtp"      // dashboard_kv row holding the SMTP config JSON
+	maskedSecret   = "••••••••"  //nolint:gosmopolitan // UI mask, not a credential
 )
 
 // smtpConfig is the persisted SMTP configuration. The web client
