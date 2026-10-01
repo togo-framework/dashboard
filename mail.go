@@ -34,9 +34,9 @@ const (
 	maskedSecret   = "••••••••" //nolint:gosmopolitan // UI mask, not a credential
 )
 
-// smtpConfig is the persisted SMTP configuration. Field names match the kit's
-// MailConfig type (host/port/username/password/from/secure) so MailSettingsForm
-// round-trips it directly.
+// smtpConfig is the persisted SMTP configuration. The web client
+// (web/lib/mail.ts) maps this shape (host/port/username/password/from/secure)
+// to and from Nasaq's SmtpSettings.
 type smtpConfig struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`

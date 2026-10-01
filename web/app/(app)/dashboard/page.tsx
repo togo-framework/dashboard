@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PageHeader, StatCard } from "@togo-framework/ui";
+import { UserRound, ShieldCheck, KeyRound } from "lucide-react";
+import { PageHeader, StatCard, StatGrid, LoadingState } from "@fadymondy/nasaq/web";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
 
@@ -15,16 +16,16 @@ export default function DashboardPage() {
     });
   }, []);
 
-  if (!me) return <div className="p-8 text-muted-foreground">{trans("common.loading", "Loading…")}</div>;
+  if (!me) return <LoadingState />;
 
   return (
-    <div className="mx-auto max-w-6xl p-8">
+    <div className="flex flex-col gap-6">
       <PageHeader title={trans("dashboard.title", "Dashboard")} description={`${trans("dashboard.welcome", "Welcome back")}, ${me.email}`} />
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <StatCard label={trans("dashboard.account", "Account")} value={me.email} />
-        <StatCard label={trans("dashboard.roles", "Roles")} value={me.roles?.join(", ") || "user"} />
-        <StatCard label={trans("dashboard.permissions", "Permissions")} value={String(me.permissions?.length ?? 0)} tone="muted" />
-      </div>
+      <StatGrid>
+        <StatCard icon={<UserRound />} label={trans("dashboard.account", "Account")} value={me.email} />
+        <StatCard icon={<ShieldCheck />} label={trans("dashboard.roles", "Roles")} value={me.roles?.join(", ") || "user"} />
+        <StatCard icon={<KeyRound />} label={trans("dashboard.permissions", "Permissions")} value={me.permissions?.length ?? 0} />
+      </StatGrid>
     </div>
   );
 }

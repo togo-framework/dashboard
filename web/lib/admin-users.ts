@@ -5,7 +5,28 @@
 // bearer header while impersonating.
 "use client";
 
-import type { AdminUser, AddUserInput, EditUserInput, AdminLinkResult } from "@togo-framework/ui";
+
+/** A user as the auth plugin's admin API returns it. */
+export interface AdminUser {
+  id?: string;
+  email: string;
+  roles?: string[];
+  permissions?: string[];
+  created_at?: string;
+}
+/** Result of a reset-password / magic-link call: the link, or `emailed` when SMTP delivered it. */
+export interface AdminLinkResult { link?: string; emailed?: boolean }
+export interface AddUserInput { email: string; password?: string; roles?: string[] }
+export interface EditUserInput { email?: string; roles?: string[]; permissions?: string[] }
+
+/** Carries the HTTP status so callers can tell "API not installed" (404/501) from a real failure. */
+export class AdminError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 import { impersonationHeaders } from "./impersonation";
 
 const API = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
@@ -26,7 +47,7 @@ async function req<T = any>(path: string, init: RequestInit & { write?: boolean 
   if (write) h["X-CSRF-Token"] = await csrf();
   const res = await fetch(`${API}/api/auth/admin${path}`, { credentials: "include", headers: h, ...rest });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || data.detail || `request failed (${res.status})`);
+  if (!res.ok) throw new AdminError(data.error || data.detail || `request failed (${res.status})`, res.status);
   return data as T;
 }
 
@@ -36,12 +57,13 @@ export const adminUsers = {
 
   get: (id: string): Promise<AdminUser> => req<AdminUser>(`/users/${id}`),
 
-  create: (input: AddUserInput): Promise<void> =>
-    req(`/users`, {
+  /** Resolves with the new user's id when the backend returns it. */
+  create: (input: AddUserInput): Promise<{ id?: string }> =>
+    req<{ id?: string; user?: { id?: string } }>(`/users`, {
       method: "POST",
       write: true,
       body: JSON.stringify({ email: input.email, password: input.password || undefined, roles: input.roles }),
-    }).then(() => undefined),
+    }).then((d) => ({ id: d.user?.id ?? d.id })),
 
   update: (id: string, input: EditUserInput): Promise<void> =>
     req(`/users/${id}`, {

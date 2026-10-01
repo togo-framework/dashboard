@@ -1,42 +1,48 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  PageHeader, MailSettingsForm, useLanguage, type MailConfig,
-} from "@togo-framework/ui";
-import { loadMail, saveMail, testMail } from "@/lib/mail";
+import { PageHeader, SmtpSettings, ErrorState, type SmtpConfig } from "@fadymondy/nasaq/web";
+import { loadMail, saveMail, testMail, EMPTY_SMTP } from "@/lib/mail";
+import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
 
 export default function AdminMailPage() {
-  const { language } = useLanguage();
-  const [config, setConfig] = useState<MailConfig>({ port: 587, secure: true });
+  const [config, setConfig] = useState<SmtpConfig>(EMPTY_SMTP);
   const [available, setAvailable] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [testTo, setTestTo] = useState("");
 
   useEffect(() => {
+    auth.me().then((me) => setTestTo(me?.email ?? ""));
     loadMail()
       .then(({ config: c, available: a }) => { setConfig(c); setAvailable(a); })
       .catch(() => setAvailable(false))
-      .finally(() => setLoaded(true));
+      .finally(() => setLoading(false));
   }, []);
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={trans("admin.mail", "Mail")}
         description={trans("admin.mail_subtitle", "Outbound SMTP so reset and magic-link emails actually send")}
       />
-      <div className="mt-6">
-        {/* key flips once loaded so the kit form re-seeds from `value`. */}
-        <MailSettingsForm
-          key={loaded ? "loaded" : "init"}
+      {available ? (
+        <SmtpSettings
           value={config}
-          available={available}
-          language={language}
-          onSave={saveMail}
+          loading={loading}
+          defaultTestTo={testTo}
+          onSave={async (input) => {
+            try { await saveMail(input); setConfig((await loadMail()).config); }
+            catch (e) { return { error: e instanceof Error ? e.message : trans("admin.save_failed", "Save failed") }; }
+          }}
           onTest={testMail}
         />
-      </div>
+      ) : (
+        <ErrorState
+          title={trans("admin.mail_unavailable", "Mail API unavailable")}
+          description={trans("admin.mail_unavailable_desc", "Install the dashboard backend to configure SMTP here.")}
+        />
+      )}
     </div>
   );
 }

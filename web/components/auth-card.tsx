@@ -1,27 +1,22 @@
-// Adapter over @togo-framework/ui auth/primitives so the auth pages
-// (login/register/reset/two-factor/lock) + profile keep their existing imports.
-// Uses the kit AuthCard (split-screen brand panel + form) and shadcn primitives.
+// Adapter over Nasaq's auth primitives so the auth pages (login/register/reset/
+// two-factor/lock) + profile keep their existing imports.
+// Uses Nasaq's AuthLayout (split-screen brand panel + form) and form primitives.
 "use client";
 
-import { ReactNode, useEffect, useId, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { ShieldCheck, Terminal } from "lucide-react";
 import {
-  AuthCard as KitAuthCard,
-  AuthErrorAlert,
-  Input,
-  Label,
+  AuthLayout,
+  Alert,
   Button,
-  type AuthCardBrand,
-} from "@togo-framework/ui";
+  Field as NasaqField,
+  FieldLabel,
+  Input,
+  ProductMark,
+} from "@fadymondy/nasaq/web";
 import { trans } from "@/lib/i18n";
 
 const APP = process.env.NEXT_PUBLIC_APP_NAME ?? "togo";
-
-const BRAND: AuthCardBrand = {
-  name: APP,
-  icon: <ShieldCheck className="h-10 w-10" />,
-  tagline: { en: "Authentication & identity", ar: "المصادقة والهوية" },
-};
 
 export function AuthCard({
   title,
@@ -35,28 +30,39 @@ export function AuthCard({
   children: ReactNode;
 }) {
   return (
-    <KitAuthCard brand={BRAND} language="en" layout="split">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
-      <div className="mt-6">{children}</div>
-      {footer && <div className="mt-6 text-sm text-muted-foreground">{footer}</div>}
-    </KitAuthCard>
+    <AuthLayout
+      variant="split"
+      title={title}
+      description={subtitle}
+      footer={footer}
+      panel={
+        <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+          <ProductMark size={64} />
+          <div className="text-3xl font-medium tracking-tight">{APP}</div>
+          <p className="flex items-center gap-2 text-muted-foreground">
+            <ShieldCheck className="size-4" />
+            {trans("auth.tagline", "Authentication & identity")}
+          </p>
+        </div>
+      }
+    >
+      {children}
+    </AuthLayout>
   );
 }
 
 export function Field({ label, ...rest }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
-  const id = useId();
   return (
-    <div className="mb-4 space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Input id={id} {...rest} />
-    </div>
+    <NasaqField name={rest.name} className="mb-4">
+      <FieldLabel>{label}</FieldLabel>
+      <Input {...rest} />
+    </NasaqField>
   );
 }
 
 export function Submit({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <Button className="w-full" {...rest}>
+    <Button variant="primary" className="w-full" {...rest}>
       {children}
     </Button>
   );
@@ -64,13 +70,13 @@ export function Submit({ children, ...rest }: React.ButtonHTMLAttributes<HTMLBut
 
 export function ErrorText({ children }: { children?: ReactNode }) {
   if (!children) return null;
-  return <AuthErrorAlert error={String(children)} />;
+  return <Alert tone="danger" className="mb-4">{String(children)}</Alert>;
 }
 
 type Method = { name: string; label: string; type: string; url: string };
 
 const GoogleIcon = () => (
-  <svg viewBox="0 0 24 24" className="h-4 w-4"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" /><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z" /></svg>
+  <svg viewBox="0 0 24 24" className="size-4"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" /><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z" /></svg>
 );
 
 // LoginMethods — the sign-in methods actually configured (dev login, OAuth),
@@ -95,7 +101,7 @@ export function LoginMethods() {
         {methods.map((m) => (
           <Button
             key={m.name}
-            variant="outline"
+            variant="secondary"
             className="w-full"
             onClick={async () => {
               if (m.type === "dev") {
@@ -106,7 +112,7 @@ export function LoginMethods() {
               }
             }}
           >
-            {m.type === "dev" ? <Terminal className="h-4 w-4" /> : m.name === "google" ? <GoogleIcon /> : null}
+            {m.type === "dev" ? <Terminal className="size-4" /> : m.name === "google" ? <GoogleIcon /> : null}
             {m.label}
           </Button>
         ))}
