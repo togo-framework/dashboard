@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth } from "@/lib/auth";
+import { auth, type Me } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
+import { messageOf } from "@/lib/http-error";
+import { useImpersonation } from "@/lib/impersonation";
 import { Field, Submit, ErrorText } from "@/components/auth-card";
 
 export default function ProfilePage() {
-  const [me, setMe] = useState<any>(null);
+  const imp = useImpersonation();
+  const [me, setMe] = useState<Me | null>(null);
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [pin, setPin] = useState("");
@@ -14,20 +17,20 @@ export default function ProfilePage() {
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    auth.me().then(setMe);
+    auth.me().then(setMe).catch(() => setMe(null));
   }, []);
 
   async function changePw(e: React.FormEvent) {
     e.preventDefault();
     setErr(""); setMsg("");
     try { await auth.changePassword(oldPw, newPw); setMsg(trans("auth.profile.pw_updated", "Password updated.")); setOldPw(""); setNewPw(""); }
-    catch (e: any) { setErr(e.message); }
+    catch (e: unknown) { setErr(messageOf(e)); }
   }
   async function savePin(e: React.FormEvent) {
     e.preventDefault();
     setErr(""); setMsg("");
     try { await auth.setPin(pin); setMsg(trans("auth.profile.pin_set", "PIN set.")); setPin(""); }
-    catch (e: any) { setErr(e.message); }
+    catch (e: unknown) { setErr(messageOf(e)); }
   }
 
   return (
@@ -37,9 +40,15 @@ export default function ProfilePage() {
         {me && <p className="text-slate-500">{me.email} · {trans("auth.profile.roles", "roles")}: {me.roles?.join(", ") || "—"}</p>}
       </header>
 
+      {imp ? (
+        <p role="note" className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          {trans("auth.profile.impersonating", "You are impersonating this account. Password, PIN and two-factor settings are not available until you end the impersonation.")}
+        </p>
+      ) : null}
       <ErrorText>{err}</ErrorText>
       {msg && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40">{msg}</p>}
 
+      {!imp && (<>
       <section className="border border-slate-200 p-6 dark:border-slate-800">
         <h2 className="mb-4 font-medium">{trans("auth.profile.change_pw", "Change password")}</h2>
         <form onSubmit={changePw}>
@@ -61,6 +70,7 @@ export default function ProfilePage() {
         <h2 className="mb-2 font-medium">{trans("auth.2fa.title", "Two-factor authentication")}</h2>
         <a href="/two-factor" className="text-sm font-medium text-slate-900 underline dark:text-white">{trans("auth.profile.manage_2fa", "Manage 2FA →")}</a>
       </section>
+      </>)}
     </div>
   );
 }

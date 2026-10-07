@@ -1,21 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserRound, ShieldCheck, KeyRound } from "lucide-react";
-import { PageHeader, StatCard, StatGrid, LoadingState } from "@fadymondy/nasaq/web";
-import { auth } from "@/lib/auth";
+import { PageHeader, StatCard, StatGrid, LoadingState, ErrorState } from "@fadymondy/nasaq/web";
+import { auth, type Me } from "@/lib/auth";
+import { messageOf } from "@/lib/http-error";
 import { trans } from "@/lib/i18n";
 
 export default function DashboardPage() {
-  const [me, setMe] = useState<any>(null);
+  const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     auth.me().then((u) => {
-      if (!u) { window.location.href = "/login"; return; }
+      if (!u) { router.replace("/login"); return; }
       setMe(u);
-    });
-  }, []);
+    }).catch((e: unknown) => setError(messageOf(e)));
+  }, [router]);
 
+  if (error) return <ErrorState title={trans("dashboard.load_failed", "Could not load your session")} description={error} />;
   if (!me) return <LoadingState />;
 
   return (

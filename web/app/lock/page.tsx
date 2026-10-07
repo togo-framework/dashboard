@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
+import { messageOf } from "@/lib/http-error";
 import { AuthCard, Field, Submit, ErrorText } from "@/components/auth-card";
 
 // Lock screen: unlock the session with a PIN (set one from your profile first).
 export default function LockPage() {
+  const router = useRouter();
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,9 +20,9 @@ export default function LockPage() {
     setErr("");
     try {
       await auth.verifyPin(pin);
-      window.location.href = "/dashboard";
-    } catch (e: any) {
-      setErr(e.message);
+      router.replace("/dashboard");
+    } catch (e: unknown) {
+      setErr(messageOf(e));
     } finally {
       setBusy(false);
     }

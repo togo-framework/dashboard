@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, ShieldCheck, KeyRound, ArrowLeft, Link2, Trash2, UserCog } from "lucide-react";
 import {
@@ -9,8 +9,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@fadymondy/nasaq/web";
 import { adminUsers, type AdminUser, type AdminLinkResult } from "@/lib/admin-users";
-import { setImpersonation } from "@/lib/impersonation";
+import { setImpersonation, useImpersonation } from "@/lib/impersonation";
+import { ForbiddenState } from "@/components/forbidden-state";
+import { isForbidden, isUnauthorized, messageOf } from "@/lib/http-error";
 import { trans } from "@/lib/i18n";
+import { ImpersonationBlocked } from "@/components/impersonation-blocked";
 
 function Chips({ items, empty, mono }: { items: string[]; empty: string; mono?: boolean }) {
   if (!items.length) return <p className="text-sm text-muted-foreground">{empty}</p>;
@@ -21,29 +24,37 @@ function Chips({ items, empty, mono }: { items: string[]; empty: string; mono?: 
   );
 }
 
-export default function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
+function AdminUserDetailPageInner({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [forbidden, setForbidden] = useState(false);
   const [link, setLink] = useState<{ title: string; url: string } | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setUser(await adminUsers.get(id));
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let live = true;
+    adminUsers.get(id).then((u) => { if (live) setUser(u); }).catch((e: unknown) => {
+      if (!live) return;
+      setUser(null);
+      if (isUnauthorized(e)) router.replace("/login");
+      else if (isForbidden(e)) setForbidden(true);
+    }).finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [id, router]);
 
-  const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
+  const fail = (e: unknown) => {
+    if (isForbidden(e)) setForbidden(true);
+    else toast.error(messageOf(e));
+  };
+
+  // Reset and magic links are refused (403) for an administrator target unless the server sets
+  // AUTH_IMPERSONATE_ADMINS. The caller is still a signed-in administrator, so this is a
+  // per-action refusal, not a forbidden page.
+  const failLink = (e: unknown) => {
+    if (isForbidden(e)) toast.error(trans("admin.link_refused", "The server refuses this for an administrator account."));
+    else fail(e);
+  };
 
   // A link the backend could not email is shown so the admin can pass it on.
   function deliver(r: AdminLinkResult, title: string) {
@@ -58,6 +69,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
         id: u.id ?? r.identity?.id ?? "",
         email: u.email ?? r.identity?.email ?? "",
         token: r.token,
+        expiresAt: r.expires_at,
       });
       router.push("/admin");
     } catch (e) { fail(e); }
@@ -82,7 +94,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                 variant="secondary"
                 onClick={async () => {
                   try { deliver(await adminUsers.resetPassword(user.id!), trans("admin.reset_link", "Password reset link")); }
-                  catch (e) { fail(e); }
+                  catch (e) { failLink(e); }
                 }}
               >
                 <KeyRound />{trans("admin.reset_password", "Reset password")}
@@ -91,7 +103,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                 variant="secondary"
                 onClick={async () => {
                   try { deliver(await adminUsers.magicLink(user.id!), trans("admin.magic_link", "Magic link")); }
-                  catch (e) { fail(e); }
+                  catch (e) { failLink(e); }
                 }}
               >
                 <Link2 />{trans("admin.send_magic_link", "Send magic link")}
@@ -112,7 +124,9 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
         }
       />
 
-      {loading && !user ? (
+      {forbidden ? (
+        <ForbiddenState />
+      ) : loading && !user ? (
         <LoadingState />
       ) : !user ? (
         <EmptyState className="py-16" title={trans("admin.user_not_found", "User not found")} icon={Users} />
@@ -159,4 +173,10 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
       </Dialog>
     </div>
   );
+}
+
+export default function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const imp = useImpersonation();
+  if (imp) return <ImpersonationBlocked title={trans("admin.users", "Users")} />;
+  return <AdminUserDetailPageInner params={params}/>;
 }

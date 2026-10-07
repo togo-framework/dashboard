@@ -61,3 +61,18 @@ togo is proudly sponsored by **ID8 Media** and **One Studio**.
   <p><sub>Support togo — <a href="https://github.com/sponsors/fadymondy">become a sponsor</a>.</sub></p>
 </div>
 <!-- /togo-sponsors -->
+
+## Web development and CI
+
+`web/` is injected into a project by `togo install`, so it is checked inside a
+harness: `node test-harness/assemble.mjs` copies `test-harness/template/` (a
+minimal Next 16 project pinning `@fadymondy/nasaq ^1.2.0`) to `test-harness/.build`,
+injects `web/` the way `togo install` does, and adds `test-harness/tests/`. Then,
+in `.build`: `npm ci`, `npm run lint`, `npm run typecheck`, `npm test` (Vitest +
+Testing Library, mocked fetch), `npm run build`.
+
+### Auth dependency (follow-up)
+
+The admin client targets the `/api/auth/admin/*` API of togo-framework/auth#5
+(PR #6, target v0.10.0, unreleased). `go.mod` stays on auth v0.8.0 until that tag
+exists; bump it then (no replace directive, no pseudo-version).

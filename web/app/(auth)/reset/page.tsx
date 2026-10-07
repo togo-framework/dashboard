@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
+import { messageOf } from "@/lib/http-error";
 import { AuthCard, Field, Submit, ErrorText } from "@/components/auth-card";
 
 export default function ResetPage() {
@@ -21,8 +22,8 @@ export default function ResetPage() {
       await auth.requestOtp(email, "reset");
       setMsg(trans("auth.reset.sent", "If that email exists, a code is on its way."));
       setStep("verify");
-    } catch (e: any) {
-      setErr(e.message);
+    } catch (e: unknown) {
+      setErr(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -35,8 +36,8 @@ export default function ResetPage() {
     try {
       await auth.verifyOtp(email, code, "reset");
       setMsg(trans("auth.reset.verified", "Code verified — set a new password from your profile."));
-    } catch (e: any) {
-      setErr(e.message);
+    } catch (e: unknown) {
+      setErr(messageOf(e));
     } finally {
       setBusy(false);
     }

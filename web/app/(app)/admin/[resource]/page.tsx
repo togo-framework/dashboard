@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2, Eye, Plus, Download } from "lucide-react";
 import {
   PageHeader, Button, Alert, Status, Infolist, Field, FieldLabel, Input, toast,
@@ -10,19 +10,23 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
   AlertDialogCancel, AlertDialogAction,
 } from "@fadymondy/nasaq/web";
-import { adminList, adminCreate, adminUpdate, adminDelete, editableColumns } from "@/lib/admin";
+import { useRouter } from "next/navigation";
+import { adminList, adminCreate, adminUpdate, adminDelete, editableColumns, type AdminRow } from "@/lib/admin";
+import { ForbiddenState } from "@/components/forbidden-state";
+import { isForbidden, isUnauthorized, messageOf } from "@/lib/http-error";
 import { trans } from "@/lib/i18n";
 
 const API = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
 const PAGE_SIZE = 20;
 
-type Row = Record<string, any>;
+type Row = AdminRow;
 type Mode = "create" | "edit" | "view" | "delete";
 
 const labelOf = (name: string) => name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-export default function AdminResourcePage({ params }: { params: Promise<{ resource: string }> }) {
-  const { resource } = use(params);
+function AdminResourceView({ resource }: { resource: string }) {
+  const router = useRouter();
+  const [forbidden, setForbidden] = useState(false);
   const single = resource.replace(/s$/, "");
   const [rows, setRows] = useState<Row[] | null>(null);
   const [cols, setCols] = useState<string[]>([]);
@@ -31,34 +35,43 @@ export default function AdminResourcePage({ params }: { params: Promise<{ resour
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<{ mode: Mode; row?: Row; ids?: string[] } | null>(null);
 
-  async function refresh() {
-    const data = await adminList(resource);
-    setRows(data);
-    if (data[0]) setCols(editableColumns(data[0]));
-  }
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
-    setRows(null);
-    refresh();
+    let alive = true;
+    adminList(resource).then((data) => {
+      if (!alive) return;
+      setRows(data);
+      if (data[0]) setCols(editableColumns(data[0]));
+    }).catch((e: unknown) => {
+      if (!alive) return;
+      if (isUnauthorized(e)) router.replace("/login");
+      else if (isForbidden(e)) setForbidden(true);
+      else { setRows([]); setErr(messageOf(e)); }
+    });
+    return () => { alive = false; };
+  }, [resource, router, tick]);
+
+  useEffect(() => {
     const es = new EventSource(`${API}/events`);
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
     es.onmessage = () => refresh();
     return () => es.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resource]);
+  }, [refresh]);
 
   const editCols = cols.length ? cols : ["title"];
 
   const columns = useMemo<DataTableColumn<Row>[]>(() => {
     const keys = rows?.[0] ? Object.keys(rows[0]).filter((k) => k !== "id") : editCols;
     return [
-      { id: "id", header: "ID", cell: (r) => <span className="text-muted-foreground">#{String(r.id)}</span>, sortValue: (r) => r.id, hideable: false },
+      { id: "id", header: "ID", cell: (r) => <span className="text-muted-foreground">#{String(r.id)}</span>, sortValue: (r) => r.id as string | number, hideable: false },
       ...keys.map((k): DataTableColumn<Row> => ({
         id: k,
         header: labelOf(k),
         cell: (r) => <Cell k={k} v={r[k]} />,
-        sortValue: (r) => r[k],
+        sortValue: (r) => r[k] as string | number,
         filterValue: (r) => String(r[k] ?? ""),
       })),
     ];
@@ -80,22 +93,24 @@ export default function AdminResourcePage({ params }: { params: Promise<{ resour
       setModal(null);
       table.setSelection(new Set());
       toast.success(trans("admin.deleted", "Deleted"));
-      await refresh();
-    } catch (e: any) { setErr(e.message); toast.error(e.message); }
+      refresh();
+    } catch (e: unknown) { setErr(messageOf(e)); toast.error(messageOf(e)); }
   }
 
   async function save(data: Record<string, string>) {
     setErr("");
     setSaving(true);
     try {
-      if (modal?.mode === "edit") await adminUpdate(resource, modal.row!.id, data);
+      if (modal?.mode === "edit") await adminUpdate(resource, String(modal.row!.id), data);
       else await adminCreate(resource, data);
       toast.success(modal?.mode === "edit" ? trans("admin.updated", "Updated") : trans("admin.created", "Created"));
       setModal(null);
-      await refresh();
-    } catch (e: any) { setErr(e.message); toast.error(e.message); }
+      refresh();
+    } catch (e: unknown) { setErr(messageOf(e)); toast.error(messageOf(e)); }
     finally { setSaving(false); }
   }
+
+  if (forbidden) return <ForbiddenState />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -198,7 +213,7 @@ export default function AdminResourcePage({ params }: { params: Promise<{ resour
   );
 }
 
-function Cell({ k, v }: { k: string; v: any }) {
+function Cell({ k, v }: { k: string; v: unknown }) {
   if (v == null || v === "") return <span className="text-muted-foreground">&mdash;</span>;
   if (k.endsWith("_at")) return <span className="text-muted-foreground">{String(v).slice(0, 19).replace("T", " ")}</span>;
   return <span className="line-clamp-1 max-w-[28ch]">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>;
@@ -232,7 +247,7 @@ function FormBody({ cols, row, saving, submitLabel, onCancel, onSubmit }: {
 function exportRows(rows: Row[], name: string) {
   if (!rows.length) return;
   const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
-  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = [cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   const a = document.createElement("a");
@@ -240,4 +255,10 @@ function exportRows(rows: Row[], name: string) {
   a.download = `${name}-selected.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export default function AdminResourcePage({ params }: { params: Promise<{ resource: string }> }) {
+  const { resource } = use(params);
+  // Keyed so switching resources starts from a clean state.
+  return <AdminResourceView key={resource} resource={resource} />;
 }

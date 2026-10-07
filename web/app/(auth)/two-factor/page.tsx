@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
+import { messageOf } from "@/lib/http-error";
 import { AuthCard, Field, Submit, ErrorText } from "@/components/auth-card";
 
 export default function TwoFactorPage() {
@@ -20,8 +21,8 @@ export default function TwoFactorPage() {
       const r = await auth.enroll2fa();
       setSecret(r.secret);
       setOtpauth(r.otpauth_url);
-    } catch (e: any) {
-      setErr(e.message);
+    } catch (e: unknown) {
+      setErr(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -34,8 +35,8 @@ export default function TwoFactorPage() {
     try {
       await auth.verify2fa(code);
       setMsg(trans("auth.2fa.enabled", "Two-factor authentication enabled."));
-    } catch (e: any) {
-      setErr(e.message);
+    } catch (e: unknown) {
+      setErr(messageOf(e));
     } finally {
       setBusy(false);
     }

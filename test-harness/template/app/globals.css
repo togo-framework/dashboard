@@ -1,0 +1,6 @@
+@import "tailwindcss";
+@import "@fadymondy/nasaq/tokens.css";
+@import "@fadymondy/nasaq/theme.css";
+@import "@fadymondy/nasaq/web/styles.css";
+/* Tailwind does not scan node_modules: point it at the Nasaq components so their classes are generated. */
+@source "../node_modules/@fadymondy/nasaq/dist/web";
