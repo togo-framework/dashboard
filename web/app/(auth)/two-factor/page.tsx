@@ -4,9 +4,10 @@ import { useState } from "react";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
 import { messageOf } from "@/lib/http-error";
+import { useImpersonation } from "@/lib/impersonation";
 import { AuthCard, Field, Submit, ErrorText } from "@/components/auth-card";
 
-export default function TwoFactorPage() {
+function TwoFactorForm() {
   const [secret, setSecret] = useState("");
   const [otpauth, setOtpauth] = useState("");
   const [code, setCode] = useState("");
@@ -58,4 +59,18 @@ export default function TwoFactorPage() {
       )}
     </AuthCard>
   );
+}
+
+// Two-factor enrolment belongs to the real account holder: an impersonated session
+// does not get the form (the server refuses it as well).
+export default function TwoFactorPage() {
+  const imp = useImpersonation();
+  if (imp) {
+    return (
+      <AuthCard title={trans("auth.2fa.title", "Two-factor authentication")}>
+        <p role="note">{trans("auth.profile.impersonating", "You are impersonating this account. Password, PIN and two-factor settings belong to the account holder and are not available until you end the impersonation.")}</p>
+      </AuthCard>
+    );
+  }
+  return <TwoFactorForm />;
 }

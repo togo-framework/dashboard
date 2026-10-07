@@ -21,6 +21,8 @@ import ResetPasswordPage from "@/app/(auth)/reset-password/page";
 import DashboardLayout from "@/app/(app)/layout";
 import AdminUsersPage from "@/app/(app)/admin/users/page";
 import AdminUserDetailPage from "@/app/(app)/admin/users/[id]/page";
+import ProfilePage from "@/app/(app)/profile/page";
+import TwoFactorPage from "@/app/(auth)/two-factor/page";
 import AdminMailPage from "@/app/(app)/admin/mail/page";
 
 // A pre-settled thenable lets React 19 `use()` read it synchronously instead of suspending.
@@ -141,5 +143,32 @@ describe("admin pages", () => {
     expect(await screen.findByText(/refuses this for an administrator/i)).toBeTruthy();
     expect(screen.queryByText(/^Forbidden$/)).toBeNull();
     expect(api.find("POST", "/api/auth/admin/users/u-admin/reset-password")).toHaveLength(1);
+  });
+
+  it("profile while impersonating: no password/PIN/2FA controls, explains why", async () => {
+    setImpersonation({ id: "u-2", email: "jane@example.com", token: "imp-token" });
+    const api = mockApi({ ...baseRoutes, "GET /api/auth/me": { json: { id: "u-2", email: "jane@example.com", impersonator: "u-admin" } } });
+    render(<Providers><ProfilePage /></Providers>);
+    expect(await screen.findByText(/belong to the account holder/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/current password/i)).toBeNull();
+    expect(screen.queryByLabelText(/new password/i)).toBeNull();
+    expect(screen.queryByLabelText(/PIN/i)).toBeNull();
+    expect(screen.queryByText(/manage 2fa/i)).toBeNull();
+    expect(api.calls.filter((c) => c.method !== "GET")).toHaveLength(0);
+  });
+
+  it("profile for the real account holder keeps the controls", async () => {
+    mockApi({ ...baseRoutes, "GET /api/auth/me": { json: ADMIN } });
+    render(<Providers><ProfilePage /></Providers>);
+    expect(await screen.findByLabelText(/current password/i)).toBeTruthy();
+    expect(screen.getByText(/manage 2fa/i)).toBeTruthy();
+  });
+
+  it("two-factor page is blocked while impersonating", () => {
+    setImpersonation({ id: "u-2", email: "jane@example.com", token: "imp-token" });
+    mockApi(baseRoutes);
+    render(<Providers><TwoFactorPage /></Providers>);
+    expect(screen.getByText(/belong to the account holder/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /enable|enroll|set up/i })).toBeNull();
   });
 });

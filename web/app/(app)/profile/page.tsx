@@ -42,7 +42,7 @@ export default function ProfilePage() {
 
       {imp ? (
         <p role="note" className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          {trans("auth.profile.impersonating", "You are impersonating this account. Password, PIN and two-factor settings are not available until you end the impersonation.")}
+          {trans("auth.profile.impersonating", "You are impersonating this account. Password, PIN, two-factor and API-token settings belong to the account holder and are not available until you end the impersonation.")}
         </p>
       ) : null}
       <ErrorText>{err}</ErrorText>
