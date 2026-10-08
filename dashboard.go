@@ -20,6 +20,8 @@ func init() {
 		// Mount the dashboard's own admin surface: SMTP/mail config + test-send.
 		// Runs after auth (PriorityLate+5) so the auth service is on the kernel.
 		mountMailRoutes(k)
+		// The opt-in DASHBOARD_REQUIRED_ROLE decision point the web guard asks.
+		mountAccessRoute(k)
 		return nil
 	})
 }
