@@ -132,7 +132,7 @@ func TestMailAdminDemotedAdminIsRefused(t *testing.T) {
 	_ = other
 	id, token := newAccount(t, svc, "demoted", []string{"admin"})
 	for _, rt := range mailRoutes {
-		if got := call(k, rt.method, rt.path, token, true, rt.body).Code; got == http.StatusUnauthorized || got == http.StatusForbidden {
+		if got := call(k, rt.method, rt.path, token, true, rt.body).Code; got != http.StatusOK {
 			t.Fatalf("%s before demotion: got %d, want the guard to pass", rt.method, got)
 		}
 	}

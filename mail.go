@@ -142,7 +142,7 @@ func (m *mailAdmin) kvSet(ctx context.Context, key, val string) error {
 		return err
 	}
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO dashboard_kv (k,v) VALUES (`+ph(1)+`,`+ph(2)+`) ON CONFLICT(k) DO UPDATE SET v=`+ph(2),
+		`INSERT INTO dashboard_kv (k,v) VALUES (`+ph(1)+`,`+ph(2)+`) ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
 		key, val)
 	return err
 }
