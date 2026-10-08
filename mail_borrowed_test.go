@@ -40,3 +40,28 @@ func TestMailAdminRefusesImpersonatedAdminSession(t *testing.T) {
 		}
 	}
 }
+
+// F1: an API token (PAT) owned by an administrator must not reach the mail routes, even with every
+// ability. Auth v0.10.0 gives a PAT no account roles, so RequireRole("admin") refuses it before
+// refuseBorrowedAdmin's PAT check (a second layer); this pins the end-to-end refusal either way.
+func TestMailAdminRefusesAdminPAT(t *testing.T) {
+	k, svc := bootMail(t)
+	_, admin := newAccount(t, svc, "pat-owner", []string{"admin"})
+
+	rec := doJSON(k, http.MethodPost, "/api/auth/tokens", admin, `{"name":"mail","abilities":["*"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create token got %d %s, want 201", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || out.Token == "" {
+		t.Fatalf("no token in %s", rec.Body.String())
+	}
+	for _, rt := range mailRoutes {
+		got := call(k, rt.method, rt.path, out.Token, true, rt.body)
+		if got.Code != http.StatusForbidden || !strings.Contains(got.Body.String(), `"forbidden"`) {
+			t.Errorf("admin PAT %s %s: got %d %s, want 403 forbidden", rt.method, rt.path, got.Code, got.Body.String())
+		}
+	}
+}
