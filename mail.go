@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/smtp"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/togo-framework/auth"
@@ -44,6 +45,22 @@ type smtpConfig struct {
 	Password string `json:"password"`
 	From     string `json:"from"`
 	Secure   bool   `json:"secure"`
+}
+
+// sameConnection reports whether a and b address the same SMTP server with the same login:
+// host (case-insensitive), port (0 means the 587 default), username and TLS mode. From is not
+// part of the authentication identity.
+func sameConnection(a, b smtpConfig) bool {
+	port := func(p int) int {
+		if p == 0 {
+			return 587
+		}
+		return p
+	}
+	return strings.EqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) &&
+		port(a.Port) == port(b.Port) &&
+		strings.TrimSpace(a.Username) == strings.TrimSpace(b.Username) &&
+		a.Secure == b.Secure
 }
 
 // mailAdmin carries the kernel handle for the mail routes.
@@ -88,12 +105,22 @@ func (m *mailAdmin) putMail(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Keep the existing password when the caller echoes the mask (or sends none).
+	// A blank or masked password means "keep the stored one", but the stored secret is only ever
+	// sent to the server it was saved for. If the connection identity (host, port, username,
+	// security) changed, the caller must supply the password again: otherwise POST /mail/test
+	// would hand the old credential to whatever host was just entered.
 	if cfg.Password == "" || cfg.Password == maskedSecret {
-		if old, ok := m.loadSMTP(r.Context()); ok {
-			cfg.Password = old.Password
-		} else {
-			cfg.Password = ""
+		cfg.Password = ""
+		if old, ok := m.loadSMTP(r.Context()); ok && old.Password != "" {
+			switch {
+			case sameConnection(old, cfg):
+				cfg.Password = old.Password
+			case strings.TrimSpace(cfg.Username) != "":
+				// Authenticated connection to a different identity: no silent carry-over.
+				writeErr(w, http.StatusBadRequest, "password required when changing SMTP host, port, username or security")
+				return
+			}
+			// A new config without a username sends no credentials, so the old password is dropped.
 		}
 	}
 	if err := m.saveSMTP(r.Context(), cfg); err != nil {
