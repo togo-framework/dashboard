@@ -74,7 +74,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <SidebarGroup>
           <SidebarItem {...link("/dashboard")} icon={<LayoutGrid />}>{trans("nav.dashboard", "Dashboard")}</SidebarItem>
           <SidebarItem {...link("/admin")} icon={<Table2 />}>{trans("nav.admin", "Admin")}</SidebarItem>
-          {/* The server refuses user management and mail settings to an impersonated session, so they are not offered. */}
+          {/* Hidden for UX only: the server enforces this itself. auth's admin API (user management) and the dashboard mail routes (refuseBorrowedAdmin) both answer 403 to an impersonated session. */}
           {!imp && <SidebarItem {...link("/admin/users")} icon={<Users />}>{trans("nav.users", "Users")}</SidebarItem>}
           {!imp && <SidebarItem {...link("/admin/mail")} icon={<Mail />}>{trans("nav.mail", "Mail")}</SidebarItem>}
         </SidebarGroup>
