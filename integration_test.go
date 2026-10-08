@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"runtime/debug"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/togo-framework/togo"
@@ -18,26 +19,32 @@ import (
 
 const wantAuthVersion = "v0.10.0"
 
-// TestAuthModuleIsPinnedRelease fails if auth is not the tagged release the UI was written
-// against: no replace directive, no pseudo-version, no other tag.
+// TestAuthModuleIsPinnedRelease fails if go.mod does not require auth at the tagged release
+// the UI was written against: no replace directive, no pseudo-version, no other tag. It reads
+// go.mod rather than the binary's build info, which older toolchains do not embed for tests.
+// The behaviour only v0.10.0 has (the 409/403/429 bodies, database-revalidated tokens) is
+// asserted by the tests below.
 func TestAuthModuleIsPinnedRelease(t *testing.T) {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		t.Fatal("no build info in the test binary")
+	raw, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, d := range bi.Deps {
-		if d.Path != "github.com/togo-framework/auth" {
-			continue
+	found := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		f := strings.Fields(strings.TrimSpace(line))
+		if len(f) > 0 && f[0] == "replace" {
+			t.Fatalf("go.mod has a replace directive (%q); the dashboard must build against the tagged release", strings.TrimSpace(line))
 		}
-		if d.Replace != nil {
-			t.Fatalf("auth is replaced by %s; the dashboard must build against the tagged release", d.Replace.Path)
+		if len(f) >= 2 && f[0] == "github.com/togo-framework/auth" {
+			found = true
+			if f[1] != wantAuthVersion {
+				t.Fatalf("auth is %s, want %s", f[1], wantAuthVersion)
+			}
 		}
-		if d.Version != wantAuthVersion {
-			t.Fatalf("auth is %s, want %s", d.Version, wantAuthVersion)
-		}
-		return
 	}
-	t.Fatal("auth is not in the dependency graph")
+	if !found {
+		t.Fatal("go.mod does not require github.com/togo-framework/auth")
+	}
 }
 
 func decode(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
