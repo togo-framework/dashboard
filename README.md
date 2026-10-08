@@ -99,8 +99,9 @@ under `web/app/(app)`, including `/profile`. The public auth pages (login, regis
 two-factor, lock) are not guarded.
 
 - **Unset or blank (the default):** any signed-in account, the v0.9 behaviour.
-- **Set, e.g. `admin`:** only accounts holding that role, checked against the database on every
-  request. An API token (PAT) and an impersonated session are refused even when the account
+- **Set, e.g. `admin`:** only accounts holding that role. Role membership is checked against the
+  database on every request; the setting itself is read when the API boots, so changing it needs
+  a restart. An API token (PAT) and an impersonated session are refused even when the account
   holds the role.
 
 `GET /api/dashboard/access` answers the question (204 allowed, 401 sign in, 403 forbidden, always
@@ -115,6 +116,9 @@ What it does not do:
 - **It is not the data boundary.** It keeps pages from rendering. Each API still enforces its own
   authorization (`/api/auth/admin/*` and the mail routes require `admin` regardless). Other routes,
   such as `/api/_meta/*`, `/graphql` and `/events`, are not covered by this setting.
+- **It does not hide the UI code.** The compiled client bundles of the dashboard views are static
+  files under `/_next/static`, downloadable by anyone: they show the UI, endpoint and field names,
+  never data.
 - **The session cookie must reach the web origin.** The guard reads `togo_session` from the request
   to Next, which the default same-origin `/api` rewrite provides. With a cross-origin
   `NEXT_PUBLIC_API_ORIGIN` the cookie is set on the API's origin only, and the guard sends every
@@ -135,4 +139,6 @@ The page guard is checked end to end by `webguard_e2e_test.go`: after `npm run b
 `test-harness/.build`, `go test -tags webe2e -run TestWebGuard -count=1 .` runs `next start` against
 a real kernel and requests every (app) route as a hard load, an RSC request, a prefetch and a soft
 navigation, for anonymous, forged, PAT, impersonated, non-admin and admin callers, after a demotion
-and a deletion, and with the setting unset.
+and a deletion, and with the setting unset. The routes are read from `web/app/(app)`, and
+`test-harness/tests/gate-coverage.test.ts` fails if a page there does not render inside
+`DashboardGate` or if a new kind of route file appears there.

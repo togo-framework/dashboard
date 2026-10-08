@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -173,16 +174,44 @@ type webRoute struct {
 	dir  string // the route's folder under web/app/(app)
 }
 
-func webRoutes(userID string) []webRoute {
-	return []webRoute{
-		{"/dashboard", "dashboard"},
-		{"/profile", "profile"},
-		{"/admin", "admin"},
-		{"/admin/users", "admin/users"},
-		{"/admin/users/" + userID, "admin/users/[id]"},
-		{"/admin/mail", "admin/mail"},
-		{"/admin/posts", "admin/[resource]"},
+// webRoutes is every page under web/app/(app), read from the filesystem so a new page is
+// covered without editing this list. Dynamic segments get a concrete value; an unknown one
+// fails the test until it is given one here.
+func webRoutes(t *testing.T, userID string) []webRoute {
+	t.Helper()
+	params := map[string]string{"[id]": userID, "[resource]": "posts"}
+	root := filepath.Join("web", "app", "(app)")
+	var routes []webRoute
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "page.tsx" {
+			return err
+		}
+		rel, _ := filepath.Rel(root, filepath.Dir(p))
+		dir := filepath.ToSlash(rel)
+		if dir == "." {
+			t.Fatalf("%s: a page at the (app) root needs its own route entry here", p)
+		}
+		var segs []string
+		for _, seg := range strings.Split(dir, "/") {
+			if strings.HasPrefix(seg, "[") {
+				v, ok := params[seg]
+				if !ok {
+					t.Fatalf("no test value for dynamic segment %s in %s", seg, dir)
+				}
+				seg = v
+			}
+			segs = append(segs, seg)
+		}
+		routes = append(routes, webRoute{"/" + strings.Join(segs, "/"), dir})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	if len(routes) == 0 {
+		t.Fatal("no pages under " + root)
+	}
+	return routes
 }
 
 // clientRef returns the flight-payload reference ("I[<id>,") of a client module, read from the
@@ -280,7 +309,7 @@ func TestWebGuardRequiredRole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	routes := webRoutes(adminID)
+	routes := webRoutes(t, adminID)
 	for _, c := range []webCaller{
 		{name: "anonymous", want: signin},
 		{name: "garbage cookie", cookie: "not-a-token", want: signin},
@@ -312,7 +341,7 @@ func TestWebGuardRevocation(t *testing.T) {
 
 	_, remover := newAccount(t, svc, "remover", []string{"admin"})
 	id, token := newAccount(t, svc, "revoked", []string{"admin"})
-	routes := webRoutes(id)
+	routes := webRoutes(t, id)
 	checkRoutes(t, base, web, routes, webCaller{name: "admin", cookie: token, want: allow})
 
 	if err := svc.SetRoles(t.Context(), id, []string{"user"}); err != nil {
@@ -335,7 +364,7 @@ func TestWebGuardUnsetRole(t *testing.T) {
 	web := os.Getenv("DASHBOARD_E2E_WEB")
 
 	id, user := newAccount(t, svc, "user", []string{"user"})
-	routes := webRoutes(id)
+	routes := webRoutes(t, id)
 	checkRoutes(t, base, web, routes, webCaller{name: "anonymous", want: signin})
 	checkRoutes(t, base, web, routes, webCaller{name: "user", cookie: user, want: allow})
 }
