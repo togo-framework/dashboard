@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/smtp"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/togo-framework/auth"
@@ -46,6 +47,22 @@ type smtpConfig struct {
 	Secure   bool   `json:"secure"`
 }
 
+// sameConnection reports whether a and b address the same SMTP server with the same login:
+// host (case-insensitive), port (0 means the 587 default), username and TLS mode. From is not
+// part of the authentication identity.
+func sameConnection(a, b smtpConfig) bool {
+	port := func(p int) int {
+		if p == 0 {
+			return 587
+		}
+		return p
+	}
+	return strings.EqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) &&
+		port(a.Port) == port(b.Port) &&
+		strings.TrimSpace(a.Username) == strings.TrimSpace(b.Username) &&
+		a.Secure == b.Secure
+}
+
 // mailAdmin carries the kernel handle for the mail routes.
 type mailAdmin struct{ k *togo.Kernel }
 
@@ -62,7 +79,7 @@ func mountMailRoutes(k *togo.Kernel) {
 	}
 	m := &mailAdmin{k: k}
 	k.Router.Route("/api/dashboard/admin", func(r chi.Router) {
-		r.Use(svc.RequireRole("admin"))
+		r.Use(svc.RequireRole("admin"), refuseBorrowedAdmin)
 		r.Get("/mail", m.getMail)
 		r.With(csrfGuard).Put("/mail", m.putMail)
 		r.With(csrfGuard).Post("/mail/test", m.testMail)
@@ -88,12 +105,22 @@ func (m *mailAdmin) putMail(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Keep the existing password when the caller echoes the mask (or sends none).
+	// A blank or masked password means "keep the stored one", but the stored secret is only ever
+	// sent to the server it was saved for. If the connection identity (host, port, username,
+	// security) changed, the caller must supply the password again: otherwise POST /mail/test
+	// would hand the old credential to whatever host was just entered.
 	if cfg.Password == "" || cfg.Password == maskedSecret {
-		if old, ok := m.loadSMTP(r.Context()); ok {
-			cfg.Password = old.Password
-		} else {
-			cfg.Password = ""
+		cfg.Password = ""
+		if old, ok := m.loadSMTP(r.Context()); ok && old.Password != "" {
+			switch {
+			case sameConnection(old, cfg):
+				cfg.Password = old.Password
+			case strings.TrimSpace(cfg.Username) != "":
+				// Authenticated connection to a different identity: no silent carry-over.
+				writeErr(w, http.StatusBadRequest, "password required when changing SMTP host, port, username or security")
+				return
+			}
+			// A new config without a username sends no credentials, so the old password is dropped.
 		}
 	}
 	if err := m.saveSMTP(r.Context(), cfg); err != nil {
@@ -142,7 +169,7 @@ func (m *mailAdmin) kvSet(ctx context.Context, key, val string) error {
 		return err
 	}
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO dashboard_kv (k,v) VALUES (`+ph(1)+`,`+ph(2)+`) ON CONFLICT(k) DO UPDATE SET v=`+ph(2),
+		`INSERT INTO dashboard_kv (k,v) VALUES (`+ph(1)+`,`+ph(2)+`) ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
 		key, val)
 	return err
 }
@@ -234,6 +261,22 @@ func sendSMTP(cfg smtpConfig, to, subject, body string) error {
 }
 
 // ---- middleware + helpers ------------------------------------------------
+
+// refuseBorrowedAdmin runs after auth's RequireRole("admin"), which only checks the role. It
+// mirrors auth's own admin API (requireAdmin): an impersonated session is borrowed and an API
+// token (PAT) is scoped by its abilities, so neither may act with the owner's administrator role
+// on the mail routes. With AUTH_ADMIN_CROSS_CONTROL=true an administrator can impersonate
+// another administrator, whose borrowed session would otherwise pass RequireRole.
+func refuseBorrowedAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := auth.IdentityFrom(r.Context())
+		if !ok || id == nil || id.Impersonator != "" || id.Guard == "pat" {
+			writeErr(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // csrfGuard enforces double-submit CSRF on unsafe methods for COOKIE-authed
 // requests, mirroring the auth plugin. Bearer (API/impersonation) requests are

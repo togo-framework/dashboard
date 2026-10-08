@@ -5,15 +5,11 @@
 // shapes Nasaq's SmtpSettings uses (SmtpConfig / SmtpSaveInput / TestOutcome).
 "use client";
 
+import { csrfToken } from "./auth";
+import { httpErrorFrom } from "./http-error";
 import type { SmtpConfig, SmtpSaveInput, TestOutcome, TestStepId } from "@fadymondy/nasaq/web";
 
 const API = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
-
-async function csrf(): Promise<string> {
-  const res = await fetch(`${API}/api/auth/csrf`, { credentials: "include" });
-  const data = await res.json().catch(() => ({}));
-  return data.csrf_token ?? "";
-}
 
 /** The backend's SMTP config. `secure` means TLS: implicit on port 465, STARTTLS otherwise. */
 interface BackendMail { host?: string; port?: number; username?: string; password?: string; from?: string; secure?: boolean }
@@ -53,23 +49,20 @@ export type MailLoad = { config: SmtpConfig; available: boolean };
 export async function loadMail(): Promise<MailLoad> {
   const res = await fetch(`${API}/api/dashboard/admin/mail`, { credentials: "include" });
   if (res.status === 404 || res.status === 501) return { config: EMPTY_SMTP, available: false };
-  if (!res.ok) throw new Error(`load failed (${res.status})`);
+  if (!res.ok) throw await httpErrorFrom(res, "load failed");
   const body = (await res.json().catch(() => ({}))) as BackendMail;
   return { config: toSmtp(body), available: true };
 }
 
 export async function saveMail(input: SmtpSaveInput): Promise<void> {
-  const token = await csrf();
+  const token = await csrfToken();
   const res = await fetch(`${API}/api/dashboard/admin/mail`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json", "X-CSRF-Token": token },
     body: JSON.stringify(fromSmtp(input)),
   });
-  if (!res.ok) {
-    const d = await res.json().catch(() => ({}));
-    throw new Error(d.error || `save failed (${res.status})`);
-  }
+  if (!res.ok) throw await httpErrorFrom(res, "save failed");
 }
 
 // The backend reports one error string; place it on the step it most likely failed at.
@@ -88,7 +81,7 @@ export async function testMail(input: SmtpSaveInput & { to: string }): Promise<T
   let error: string | undefined;
   try {
     await saveMail(input);
-    const token = await csrf();
+    const token = await csrfToken();
     const res = await fetch(`${API}/api/dashboard/admin/mail/test`, {
       method: "POST",
       credentials: "include",

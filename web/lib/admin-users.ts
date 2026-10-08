@@ -1,10 +1,13 @@
 // Admin user-management client — talks to the auth plugin's /api/auth/admin/*
-// surface (guarded by role=admin + double-submit CSRF; bearer requests are
-// CSRF-exempt). Mirrors the existing lib/auth.ts fetch pattern: HttpOnly cookie
-// session + a CSRF token fetched from /api/auth/csrf, plus an Authorization
-// bearer header while impersonating.
+// surface. Contract (togo-framework/auth v0.10.0, #5/#6): every route requires a signed-in
+// administrator (401 signed out; 403 for a non-administrator, an API token or an
+// impersonated session); writes carry the double-submit CSRF header from
+// /api/auth/csrf. The administrator's own cookie session is used. An
+// impersonation bearer token is deliberately NOT sent: the server refuses it here.
 "use client";
 
+import { csrfToken } from "./auth";
+import { adminErrorFrom } from "./admin-errors";
 
 /** A user as the auth plugin's admin API returns it. */
 export interface AdminUser {
@@ -15,40 +18,24 @@ export interface AdminUser {
   created_at?: string;
 }
 /** Result of a reset-password / magic-link call: the link, or `emailed` when SMTP delivered it. */
-export interface AdminLinkResult { link?: string; emailed?: boolean }
+export interface AdminLinkResult { link?: string; emailed?: boolean; expires_at?: string }
 export interface AddUserInput { email: string; password?: string; roles?: string[] }
 export interface EditUserInput { email?: string; roles?: string[]; permissions?: string[] }
-
-/** Carries the HTTP status so callers can tell "API not installed" (404/501) from a real failure. */
-export class AdminError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
-}
-import { impersonationHeaders } from "./impersonation";
+/** Response of POST /users/{id}/impersonate. */
+export interface ImpersonationGrant { token: string; expires_at?: string; identity?: { id?: string; email?: string } }
 
 const API = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
 
-async function csrf(): Promise<string> {
-  const res = await fetch(`${API}/api/auth/csrf`, { credentials: "include" });
-  const data = await res.json().catch(() => ({}));
-  return data.csrf_token ?? "";
-}
-
-async function req<T = any>(path: string, init: RequestInit & { write?: boolean } = {}): Promise<T> {
+async function req<T>(path: string, init: RequestInit & { write?: boolean } = {}): Promise<T> {
   const { write, headers, ...rest } = init;
   const h: Record<string, string> = {
     "Content-Type": "application/json",
-    ...impersonationHeaders(),
     ...(headers as Record<string, string> | undefined),
   };
-  if (write) h["X-CSRF-Token"] = await csrf();
+  if (write) h["X-CSRF-Token"] = await csrfToken();
   const res = await fetch(`${API}/api/auth/admin${path}`, { credentials: "include", headers: h, ...rest });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new AdminError(data.error || data.detail || `request failed (${res.status})`, res.status);
-  return data as T;
+  if (!res.ok) throw await adminErrorFrom(res, "request failed");
+  return (await res.json().catch(() => ({}))) as T;
 }
 
 export const adminUsers = {
@@ -57,7 +44,7 @@ export const adminUsers = {
 
   get: (id: string): Promise<AdminUser> => req<AdminUser>(`/users/${id}`),
 
-  /** Resolves with the new user's id when the backend returns it. */
+  /** Resolves with the new user's id (the API answers 201 `{user}`). */
   create: (input: AddUserInput): Promise<{ id?: string }> =>
     req<{ id?: string; user?: { id?: string } }>(`/users`, {
       method: "POST",
@@ -65,26 +52,35 @@ export const adminUsers = {
       body: JSON.stringify({ email: input.email, password: input.password || undefined, roles: input.roles }),
     }).then((d) => ({ id: d.user?.id ?? d.id })),
 
-  update: (id: string, input: EditUserInput): Promise<void> =>
-    req(`/users/${id}`, {
+  /**
+   * `acceptIdentitySetByOther` is the explicit confirmation of a promotion the server answered with a
+   * provenance 409. It applies to this single request only: it is not stored, and nothing here retries.
+   */
+  update: (id: string, input: EditUserInput, opts: { acceptIdentitySetByOther?: boolean } = {}): Promise<void> =>
+    req<unknown>(`/users/${id}`, {
       method: "PATCH",
       write: true,
-      body: JSON.stringify({ email: input.email, roles: input.roles, permissions: input.permissions }),
+      body: JSON.stringify({
+        email: input.email,
+        roles: input.roles,
+        permissions: input.permissions,
+        accept_identity_set_by_other: opts.acceptIdentitySetByOther === true ? true : undefined,
+      }),
     }).then(() => undefined),
 
   remove: (id: string): Promise<void> =>
-    req(`/users/${id}`, { method: "DELETE", write: true }).then(() => undefined),
+    req<unknown>(`/users/${id}`, { method: "DELETE", write: true }).then(() => undefined),
 
-  impersonate: (id: string): Promise<{ token?: string; identity?: { id?: string; email?: string } }> =>
-    req(`/users/${id}/impersonate`, { method: "POST", write: true }),
+  impersonate: (id: string): Promise<ImpersonationGrant> =>
+    req<ImpersonationGrant>(`/users/${id}/impersonate`, { method: "POST", write: true }),
 
   resetPassword: (id: string, password?: string): Promise<AdminLinkResult & { reset?: boolean }> =>
-    req(`/users/${id}/reset-password`, {
+    req<AdminLinkResult & { reset?: boolean }>(`/users/${id}/reset-password`, {
       method: "POST",
       write: true,
       body: JSON.stringify(password ? { password } : {}),
     }),
 
   magicLink: (id: string): Promise<AdminLinkResult> =>
-    req(`/users/${id}/magic-link`, { method: "POST", write: true }),
+    req<AdminLinkResult>(`/users/${id}/magic-link`, { method: "POST", write: true }),
 };

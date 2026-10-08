@@ -8,12 +8,16 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, toast,
   type ManagedUser, type ManagedRole,
 } from "@fadymondy/nasaq/web";
-import { adminUsers, AdminError, type AdminUser, type AdminLinkResult } from "@/lib/admin-users";
-import { setImpersonation } from "@/lib/impersonation";
+import { adminUsers, type AdminUser, type AdminLinkResult } from "@/lib/admin-users";
+import { ForbiddenState } from "@/components/forbidden-state";
+import { isForbidden, isUnauthorized, isUnavailable, messageOf } from "@/lib/http-error";
+import { adminMessage, isCallerForbidden } from "@/lib/admin-errors";
+import { usePromotion } from "@/lib/promotion";
+import { PromotionConfirmDialog } from "@/components/promotion-confirm";
+import { setImpersonation, useImpersonation } from "@/lib/impersonation";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
-
-const errorOf = (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) });
+import { ImpersonationBlocked } from "@/components/impersonation-blocked";
 
 function toManaged(u: AdminUser): ManagedUser {
   return {
@@ -27,33 +31,54 @@ function toManaged(u: AdminUser): ManagedUser {
   };
 }
 
-export default function AdminUsersPage() {
+function AdminUsersPageInner() {
   const router = useRouter();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [available, setAvailable] = useState(true);
+  const [forbidden, setForbidden] = useState(false);
   const [meEmail, setMeEmail] = useState<string>();
   const [open, setOpen] = useState<ManagedUser | null>(null);
   const [link, setLink] = useState<{ title: string; url: string } | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      setUsers(await adminUsers.list());
-      setError(null);
-    } catch (e) {
-      if (e instanceof AdminError && (e.status === 404 || e.status === 501)) setAvailable(false);
-      else setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
+  // A 403 from requireAdmin (not an administrator, an API token, an impersonated session) means
+  // the whole page is off limits; adminTargetErr and 429 are refusals of that one action.
+  // Nothing here retries a failed action.
+  const failure = useCallback((e: unknown) => {
+    if (isCallerForbidden(e)) setForbidden(true);
+    return adminMessage(e);
   }, []);
+  const errorOf = useCallback((e: unknown) => ({ error: failure(e) }), [failure]);
+
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => { setLoading(true); setTick((t) => t + 1); }, []);
 
   useEffect(() => {
-    reload();
-    auth.me().then((m) => setMeEmail(m?.email));
-  }, [reload]);
+    let live = true;
+    adminUsers.list().then((u) => {
+      if (!live) return;
+      setUsers(u);
+      setError(null);
+    }).catch((e: unknown) => {
+      if (!live) return;
+      if (isUnauthorized(e)) router.replace("/login");
+      else if (isForbidden(e)) setForbidden(true);
+      else if (isUnavailable(e)) setAvailable(false);
+      else setError(messageOf(e));
+    }).finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [tick, router]);
+
+  useEffect(() => {
+    auth.me().then((m) => setMeEmail(m?.email)).catch(() => undefined);
+  }, []);
+
+  const promotion = usePromotion({
+    onUpdated: () => { toast.success(trans("admin.roles_updated", "Roles updated")); reload(); },
+    onError: (e) => toast.error(failure(e)),
+  });
+  const nameOf = useCallback((id: string) => users.find((u) => u.id === id)?.email ?? id, [users]);
 
   const managed = useMemo(() => users.map(toManaged), [users]);
   const roles = useMemo<ManagedRole[]>(() => {
@@ -66,6 +91,15 @@ export default function AdminUsersPage() {
   function deliver(r: AdminLinkResult, title: string) {
     if (r.emailed) toast.success(trans("admin.email_sent", "Email sent"));
     else if (r.link) setLink({ title, url: r.link });
+  }
+
+  if (forbidden) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title={trans("admin.users", "Users")} />
+        <ForbiddenState />
+      </div>
+    );
   }
 
   if (!available) {
@@ -99,7 +133,7 @@ export default function AdminUsersPage() {
             const { id } = await adminUsers.create({ email: v.email, roles: v.roles });
             toast.success(trans("admin.user_created", "User created"));
             if (v.sendInvite && id) deliver(await adminUsers.magicLink(id), trans("admin.invite_link", "Invite link"));
-            await reload();
+            reload();
           } catch (e) { return errorOf(e); }
         }}
         onResetPassword={async (u) => {
@@ -109,18 +143,32 @@ export default function AdminUsersPage() {
         onImpersonate={async (u) => {
           try {
             const r = await adminUsers.impersonate(u.id);
-            setImpersonation({ id: u.id, email: u.email, token: r.token });
+            setImpersonation({ id: u.id, email: u.email, token: r.token, expiresAt: r.expires_at });
             router.push("/admin");
           } catch (e) { return errorOf(e); }
         }}
         onUpdateRoles={async (u, next) => {
           try {
-            await adminUsers.update(u.id, { roles: next });
+            const promoting = next.includes("admin") && !u.roles.includes("admin");
+            if (promoting) {
+              // A provenance 409 opens the confirmation dialog; nothing is resent until it is confirmed.
+              if ((await promotion.request(u.id, u.email, next)) === "confirm") return;
+            } else {
+              await adminUsers.update(u.id, { roles: next });
+            }
             toast.success(trans("admin.roles_updated", "Roles updated"));
-            await reload();
+            reload();
           } catch (e) { return errorOf(e); }
         }}
         onOpenUser={setOpen}
+      />
+
+      <PromotionConfirmDialog
+        pending={promotion.pending}
+        busy={promotion.busy}
+        onConfirm={(p) => { void promotion.confirm(p); }}
+        onCancel={promotion.cancel}
+        nameOf={nameOf}
       />
 
       {/* Actions AdminUsers has no slot for: details, magic link, delete. */}
@@ -142,7 +190,7 @@ export default function AdminUsersPage() {
               onClick={async () => {
                 if (!open) return;
                 try { deliver(await adminUsers.magicLink(open.id), trans("admin.magic_link", "Magic link")); setOpen(null); }
-                catch (e) { toast.error(errorOf(e).error); }
+                catch (e) { toast.error(failure(e)); }
               }}
             >
               <Link2 /> {trans("admin.send_magic_link", "Send magic link")}
@@ -157,8 +205,8 @@ export default function AdminUsersPage() {
                     await adminUsers.remove(open.id);
                     toast.success(trans("admin.user_deleted", "User deleted"));
                     setOpen(null);
-                    await reload();
-                  } catch (e) { toast.error(errorOf(e).error); }
+                    reload();
+                  } catch (e) { toast.error(failure(e)); }
                 }}
               >
                 <Trash2 /> {trans("admin.delete", "Delete")}
@@ -182,4 +230,10 @@ export default function AdminUsersPage() {
       </Dialog>
     </div>
   );
+}
+
+export default function AdminUsersPage() {
+  const imp = useImpersonation();
+  if (imp) return <ImpersonationBlocked title={trans("admin.users", "Users")} />;
+  return <AdminUsersPageInner />;
 }

@@ -62,7 +62,7 @@ export function Field({ label, ...rest }: React.InputHTMLAttributes<HTMLInputEle
 
 export function Submit({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <Button variant="primary" className="w-full" {...rest}>
+    <Button type="submit" variant="primary" className="w-full" {...rest}>
       {children}
     </Button>
   );

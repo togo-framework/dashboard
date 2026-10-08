@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
+import { messageOf } from "@/lib/http-error";
 import { AuthCard, Field, Submit, ErrorText, LoginMethods } from "@/components/auth-card";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -18,9 +21,9 @@ export default function RegisterPage() {
     setErr("");
     try {
       await auth.register(email, password);
-      window.location.href = "/dashboard";
-    } catch (e: any) {
-      setErr(e.message);
+      router.replace("/dashboard");
+    } catch (e: unknown) {
+      setErr(messageOf(e));
     } finally {
       setBusy(false);
     }
