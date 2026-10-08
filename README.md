@@ -69,10 +69,32 @@ harness: `node test-harness/assemble.mjs` copies `test-harness/template/` (a
 minimal Next 16 project pinning `@fadymondy/nasaq ^1.2.0`) to `test-harness/.build`,
 injects `web/` the way `togo install` does, and adds `test-harness/tests/`. Then,
 in `.build`: `npm ci`, `npm run lint`, `npm run typecheck`, `npm test` (Vitest +
-Testing Library, mocked fetch), `npm run build`.
+Testing Library, mocked fetch; the real server contract is checked by the Go tests), `npm run build`.
 
-### Auth dependency (follow-up)
+### Auth dependency
 
-The admin client targets the `/api/auth/admin/*` API of togo-framework/auth#5
-(PR #6, target v0.10.0, unreleased). `go.mod` stays on auth v0.8.0 until that tag
-exists; bump it then (no replace directive, no pseudo-version).
+Requires [togo-framework/auth](https://github.com/togo-framework/auth) **v0.10.0** (pinned in
+`go.mod`: the tag, no replace directive, no pseudo-version). The admin client targets its
+`/api/auth/admin/*` API, and the SMTP routes under `/api/dashboard/admin/mail` are guarded by
+`RequireRole("admin")`, which v0.10.0 checks against the database on every request: a demoted
+admin is refused (403) and a deleted one gets 401, even with a session issued earlier.
+
+The UI handles these responses (see `web/lib/admin-errors.ts`); it never retries any of them:
+
+- **409** `identity_set_by_other_admin` on promoting an account whose email or password another
+  administrator set: a confirmation dialog names the account, the tainted fields and who set
+  them. Only the administrator's explicit confirm resends the same PATCH with
+  `accept_identity_set_by_other: true`, once; the flag is never stored. A new request, a cancel
+  or a changed 409 voids the confirmation.
+- **403** `administrators cannot be acted on this way`: a per-action message (another
+  administrator cannot be edited, reset, sent a magic link or impersonated).
+- **403** `forbidden`: the forbidden state (not an administrator, an API token or an
+  impersonated session).
+- **429** on reset-password, magic-link and impersonate: a rate-limit message.
+
+### Go tests
+
+`go test -count=1 ./...` boots the real togo kernel with the real auth plugin and asserts the
+409/403/429 bodies the UI parses, and the mail routes for demoted and deleted admins. It uses
+SQLite. To run it on PostgreSQL too: `DASHBOARD_TEST_PG_URL=<url of a throwaway database>
+go test -tags dashpg -count=1 ./...`.
