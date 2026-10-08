@@ -11,12 +11,13 @@ import {
 import { adminUsers, type AdminUser, type AdminLinkResult } from "@/lib/admin-users";
 import { ForbiddenState } from "@/components/forbidden-state";
 import { isForbidden, isUnauthorized, isUnavailable, messageOf } from "@/lib/http-error";
+import { adminMessage, isCallerForbidden } from "@/lib/admin-errors";
+import { usePromotion } from "@/lib/promotion";
+import { PromotionConfirmDialog } from "@/components/promotion-confirm";
 import { setImpersonation, useImpersonation } from "@/lib/impersonation";
 import { auth } from "@/lib/auth";
 import { trans } from "@/lib/i18n";
 import { ImpersonationBlocked } from "@/components/impersonation-blocked";
-
-const errorOf = (e: unknown) => ({ error: messageOf(e) });
 
 function toManaged(u: AdminUser): ManagedUser {
   return {
@@ -41,6 +42,15 @@ function AdminUsersPageInner() {
   const [open, setOpen] = useState<ManagedUser | null>(null);
   const [link, setLink] = useState<{ title: string; url: string } | null>(null);
 
+  // A 403 from requireAdmin (not an administrator, an API token, an impersonated session) means
+  // the whole page is off limits; adminTargetErr and 429 are refusals of that one action.
+  // Nothing here retries a failed action.
+  const failure = useCallback((e: unknown) => {
+    if (isCallerForbidden(e)) setForbidden(true);
+    return adminMessage(e);
+  }, []);
+  const errorOf = useCallback((e: unknown) => ({ error: failure(e) }), [failure]);
+
   const [tick, setTick] = useState(0);
   const reload = useCallback(() => { setLoading(true); setTick((t) => t + 1); }, []);
 
@@ -63,6 +73,12 @@ function AdminUsersPageInner() {
   useEffect(() => {
     auth.me().then((m) => setMeEmail(m?.email)).catch(() => undefined);
   }, []);
+
+  const promotion = usePromotion({
+    onUpdated: () => { toast.success(trans("admin.roles_updated", "Roles updated")); reload(); },
+    onError: (e) => toast.error(failure(e)),
+  });
+  const nameOf = useCallback((id: string) => users.find((u) => u.id === id)?.email ?? id, [users]);
 
   const managed = useMemo(() => users.map(toManaged), [users]);
   const roles = useMemo<ManagedRole[]>(() => {
@@ -133,12 +149,26 @@ function AdminUsersPageInner() {
         }}
         onUpdateRoles={async (u, next) => {
           try {
-            await adminUsers.update(u.id, { roles: next });
+            const promoting = next.includes("admin") && !u.roles.includes("admin");
+            if (promoting) {
+              // A provenance 409 opens the confirmation dialog; nothing is resent until it is confirmed.
+              if ((await promotion.request(u.id, u.email, next)) === "confirm") return;
+            } else {
+              await adminUsers.update(u.id, { roles: next });
+            }
             toast.success(trans("admin.roles_updated", "Roles updated"));
             reload();
           } catch (e) { return errorOf(e); }
         }}
         onOpenUser={setOpen}
+      />
+
+      <PromotionConfirmDialog
+        pending={promotion.pending}
+        busy={promotion.busy}
+        onConfirm={(p) => { void promotion.confirm(p); }}
+        onCancel={promotion.cancel}
+        nameOf={nameOf}
       />
 
       {/* Actions AdminUsers has no slot for: details, magic link, delete. */}
@@ -160,7 +190,7 @@ function AdminUsersPageInner() {
               onClick={async () => {
                 if (!open) return;
                 try { deliver(await adminUsers.magicLink(open.id), trans("admin.magic_link", "Magic link")); setOpen(null); }
-                catch (e) { toast.error(errorOf(e).error); }
+                catch (e) { toast.error(failure(e)); }
               }}
             >
               <Link2 /> {trans("admin.send_magic_link", "Send magic link")}
@@ -176,7 +206,7 @@ function AdminUsersPageInner() {
                     toast.success(trans("admin.user_deleted", "User deleted"));
                     setOpen(null);
                     reload();
-                  } catch (e) { toast.error(errorOf(e).error); }
+                  } catch (e) { toast.error(failure(e)); }
                 }}
               >
                 <Trash2 /> {trans("admin.delete", "Delete")}

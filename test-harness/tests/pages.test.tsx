@@ -136,11 +136,11 @@ describe("admin pages", () => {
     const api = mockApi({
       ...baseRoutes,
       "GET /api/auth/admin/users/u-admin": { json: USERS[0] },
-      "POST /api/auth/admin/users/u-admin/reset-password": { status: 403, json: { error: "refused for admin targets" } },
+      "POST /api/auth/admin/users/u-admin/reset-password": { status: 403, json: { error: "administrators cannot be acted on this way" } },
     });
     render(<Providers><Suspense><AdminUserDetailPage params={settled({ id: "u-admin" })} /></Suspense></Providers>);
     await userEvent.click(await screen.findByRole("button", { name: /reset password/i }));
-    expect(await screen.findByText(/refuses this for an administrator/i)).toBeTruthy();
+    expect(await screen.findByText(/administrator accounts can.t be changed this way/i)).toBeTruthy();
     expect(screen.queryByText(/^Forbidden$/)).toBeNull();
     expect(api.find("POST", "/api/auth/admin/users/u-admin/reset-password")).toHaveLength(1);
   });

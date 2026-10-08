@@ -11,7 +11,8 @@ import {
 import { adminUsers, type AdminUser, type AdminLinkResult } from "@/lib/admin-users";
 import { setImpersonation, useImpersonation } from "@/lib/impersonation";
 import { ForbiddenState } from "@/components/forbidden-state";
-import { isForbidden, isUnauthorized, messageOf } from "@/lib/http-error";
+import { isForbidden, isUnauthorized } from "@/lib/http-error";
+import { adminMessage, isCallerForbidden } from "@/lib/admin-errors";
 import { trans } from "@/lib/i18n";
 import { ImpersonationBlocked } from "@/components/impersonation-blocked";
 
@@ -43,18 +44,15 @@ function AdminUserDetailPageInner({ params }: { params: Promise<{ id: string }> 
     return () => { live = false; };
   }, [id, router]);
 
+  // requireAdmin's 403 means the caller may not use the admin API: show the forbidden state.
+  // adminTargetErr's 403 (another administrator is the target) and 429 are refusals of that one
+  // action: the caller is still an administrator, so they are a message, not a forbidden page.
+  // Nothing here retries a failed action.
   const fail = (e: unknown) => {
-    if (isForbidden(e)) setForbidden(true);
-    else toast.error(messageOf(e));
+    if (isCallerForbidden(e)) setForbidden(true);
+    else toast.error(adminMessage(e));
   };
-
-  // Reset and magic links are refused (403) for an administrator target unless the server sets
-  // AUTH_IMPERSONATE_ADMINS. The caller is still a signed-in administrator, so this is a
-  // per-action refusal, not a forbidden page.
-  const failLink = (e: unknown) => {
-    if (isForbidden(e)) toast.error(trans("admin.link_refused", "The server refuses this for an administrator account."));
-    else fail(e);
-  };
+  const failLink = fail;
 
   // A link the backend could not email is shown so the admin can pass it on.
   function deliver(r: AdminLinkResult, title: string) {
