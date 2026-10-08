@@ -6,7 +6,7 @@ require github.com/togo-framework/togo v0.21.0
 
 require (
 	github.com/go-chi/chi/v5 v5.1.0
-	github.com/togo-framework/auth v0.8.0
+	github.com/togo-framework/auth v0.10.0
 	modernc.org/sqlite v1.60.1
 )
 

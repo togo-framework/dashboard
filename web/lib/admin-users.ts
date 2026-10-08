@@ -1,5 +1,5 @@
 // Admin user-management client — talks to the auth plugin's /api/auth/admin/*
-// surface. Contract (togo-framework/auth#5): every route requires a signed-in
+// surface. Contract (togo-framework/auth v0.10.0, #5/#6): every route requires a signed-in
 // administrator (401 signed out; 403 for a non-administrator, an API token or an
 // impersonated session); writes carry the double-submit CSRF header from
 // /api/auth/csrf. The administrator's own cookie session is used. An
@@ -7,7 +7,7 @@
 "use client";
 
 import { csrfToken } from "./auth";
-import { httpErrorFrom } from "./http-error";
+import { adminErrorFrom } from "./admin-errors";
 
 /** A user as the auth plugin's admin API returns it. */
 export interface AdminUser {
@@ -34,7 +34,7 @@ async function req<T>(path: string, init: RequestInit & { write?: boolean } = {}
   };
   if (write) h["X-CSRF-Token"] = await csrfToken();
   const res = await fetch(`${API}/api/auth/admin${path}`, { credentials: "include", headers: h, ...rest });
-  if (!res.ok) throw await httpErrorFrom(res, "request failed");
+  if (!res.ok) throw await adminErrorFrom(res, "request failed");
   return (await res.json().catch(() => ({}))) as T;
 }
 
@@ -52,11 +52,20 @@ export const adminUsers = {
       body: JSON.stringify({ email: input.email, password: input.password || undefined, roles: input.roles }),
     }).then((d) => ({ id: d.user?.id ?? d.id })),
 
-  update: (id: string, input: EditUserInput): Promise<void> =>
+  /**
+   * `acceptIdentitySetByOther` is the explicit confirmation of a promotion the server answered with a
+   * provenance 409. It applies to this single request only: it is not stored, and nothing here retries.
+   */
+  update: (id: string, input: EditUserInput, opts: { acceptIdentitySetByOther?: boolean } = {}): Promise<void> =>
     req<unknown>(`/users/${id}`, {
       method: "PATCH",
       write: true,
-      body: JSON.stringify({ email: input.email, roles: input.roles, permissions: input.permissions }),
+      body: JSON.stringify({
+        email: input.email,
+        roles: input.roles,
+        permissions: input.permissions,
+        accept_identity_set_by_other: opts.acceptIdentitySetByOther === true ? true : undefined,
+      }),
     }).then(() => undefined),
 
   remove: (id: string): Promise<void> =>
