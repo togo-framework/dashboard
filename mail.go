@@ -79,7 +79,7 @@ func mountMailRoutes(k *togo.Kernel) {
 	}
 	m := &mailAdmin{k: k}
 	k.Router.Route("/api/dashboard/admin", func(r chi.Router) {
-		r.Use(svc.RequireRole("admin"))
+		r.Use(svc.RequireRole("admin"), refuseBorrowedAdmin)
 		r.Get("/mail", m.getMail)
 		r.With(csrfGuard).Put("/mail", m.putMail)
 		r.With(csrfGuard).Post("/mail/test", m.testMail)
@@ -261,6 +261,22 @@ func sendSMTP(cfg smtpConfig, to, subject, body string) error {
 }
 
 // ---- middleware + helpers ------------------------------------------------
+
+// refuseBorrowedAdmin runs after auth's RequireRole("admin"), which only checks the role. It
+// mirrors auth's own admin API (requireAdmin): an impersonated session is borrowed and an API
+// token (PAT) is scoped by its abilities, so neither may act with the owner's administrator role
+// on the mail routes. With AUTH_ADMIN_CROSS_CONTROL=true an administrator can impersonate
+// another administrator, whose borrowed session would otherwise pass RequireRole.
+func refuseBorrowedAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := auth.IdentityFrom(r.Context())
+		if !ok || id == nil || id.Impersonator != "" || id.Guard == "pat" {
+			writeErr(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // csrfGuard enforces double-submit CSRF on unsafe methods for COOKIE-authed
 // requests, mirroring the auth plugin. Bearer (API/impersonation) requests are
