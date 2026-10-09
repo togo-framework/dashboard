@@ -20,16 +20,18 @@ export function mockApi(routes: Record<string, Reply>) {
     if (!reply) throw new Error(`unmocked request: ${method} ${url.pathname}`);
     const r = typeof reply === "function" ? reply(call) : reply;
     const status = r.status ?? 200;
+    if (status === 204) return new Response(null, { status });
     return new Response(JSON.stringify(r.json ?? {}), { status, headers: { "Content-Type": "application/json" } });
   });
   vi.stubGlobal("fetch", fn);
   return { calls, find: (method: string, path: string) => calls.filter((c) => c.method === method && c.path === path) };
 }
 
-/** Routes every page needs: a CSRF token and an empty resource list. */
+/** Routes every page needs: a CSRF token, an empty resource list and an allowed access check. */
 export const baseRoutes: Record<string, Reply> = {
   "GET /api/auth/csrf": { json: { csrf_token: "csrf-123" } },
   "GET /api/_meta/resources": { json: { resources: [] } },
+  "GET /api/dashboard/access": { status: 204 },
 };
 
 export const ADMIN = { id: "u-admin", email: "root@example.com", roles: ["admin"], permissions: [] };

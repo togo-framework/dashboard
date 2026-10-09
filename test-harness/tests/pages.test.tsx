@@ -10,20 +10,22 @@ const push = vi.fn();
 const replace = vi.fn();
 let search = "";
 let pathname = "/dashboard";
+// Stable, like Next's own router, so effects keyed on it do not re-run on every render.
+const router = { push, replace, refresh: vi.fn(), back: vi.fn() };
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push, replace, refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => router,
   usePathname: () => pathname,
   useSearchParams: () => new URLSearchParams(search),
   useParams: () => ({ id: "u-2" }),
 }));
 
 import ResetPasswordPage from "@/app/(auth)/reset-password/page";
-import DashboardLayout from "@/app/(app)/layout";
-import AdminUsersPage from "@/app/(app)/admin/users/page";
-import AdminUserDetailPage from "@/app/(app)/admin/users/[id]/page";
-import ProfilePage from "@/app/(app)/profile/page";
+import DashboardShell from "@/app/(app)/dashboard-shell";
+import AdminUsersPage from "@/app/(app)/admin/users/view";
+import AdminUserDetailPage from "@/app/(app)/admin/users/[id]/view";
+import ProfilePage from "@/app/(app)/profile/view";
 import TwoFactorPage from "@/app/(auth)/two-factor/page";
-import AdminMailPage from "@/app/(app)/admin/mail/page";
+import AdminMailPage from "@/app/(app)/admin/mail/view";
 
 // A pre-settled thenable lets React 19 `use()` read it synchronously instead of suspending.
 function settled<T>(value: T): Promise<T> {
@@ -67,16 +69,39 @@ describe("/reset-password", () => {
 });
 
 describe("app shell", () => {
+  it("shows the forbidden state, not the content, when the access check answers 403", async () => {
+    mockApi({ ...baseRoutes, "GET /api/auth/me": { json: ADMIN }, "GET /api/dashboard/access": { status: 403 } });
+    render(<Providers><DashboardShell><p>secret</p></DashboardShell></Providers>);
+    await screen.findByText(/permission to view this page/i);
+    expect(screen.queryByText("secret")).toBeNull();
+  });
+
+  it("asks the access check again on each client navigation, cookie only", async () => {
+    const api = mockApi({ ...baseRoutes, "GET /api/auth/me": { json: ADMIN } });
+    const view = render(<Providers><DashboardShell><p>content</p></DashboardShell></Providers>);
+    await screen.findByText("content");
+    pathname = "/admin/users";
+    view.rerender(<Providers><DashboardShell><p>content</p></DashboardShell></Providers>);
+    await waitFor(() => expect(api.find("GET", "/api/dashboard/access")).toHaveLength(2));
+    expect(api.find("GET", "/api/dashboard/access").every((c) => !c.headers.Authorization)).toBe(true);
+  });
+
+  it("goes to /login when the access check answers 401", async () => {
+    mockApi({ ...baseRoutes, "GET /api/auth/me": { json: ADMIN }, "GET /api/dashboard/access": { status: 401 } });
+    render(<Providers><DashboardShell><p>content</p></DashboardShell></Providers>);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
+  });
+
   it("redirects to /login when signed out", async () => {
     mockApi({ ...baseRoutes, "GET /api/auth/me": { status: 401 } });
-    render(<Providers><DashboardLayout><p>secret</p></DashboardLayout></Providers>);
+    render(<Providers><DashboardShell><p>secret</p></DashboardShell></Providers>);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(screen.queryByText("secret")).toBeNull();
   });
 
   it("admin session: user-management and mail nav are offered, no banner", async () => {
     mockApi({ ...baseRoutes, "GET /api/auth/me": { json: ADMIN } });
-    render(<Providers><DashboardLayout><p>content</p></DashboardLayout></Providers>);
+    render(<Providers><DashboardShell><p>content</p></DashboardShell></Providers>);
     await screen.findByText("content");
     expect(screen.getAllByText("Users").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Mail").length).toBeGreaterThan(0);
@@ -90,7 +115,7 @@ describe("app shell", () => {
       "GET /api/auth/me": { json: { id: "u-2", email: "jane@example.com", impersonator: "u-admin" } },
       "POST /api/auth/impersonation/stop": { json: {} },
     });
-    render(<Providers><DashboardLayout><p>content</p></DashboardLayout></Providers>);
+    render(<Providers><DashboardShell><p>content</p></DashboardShell></Providers>);
     await screen.findByText("content");
     expect(await screen.findByText(/signed in as administrator u-admin/i)).toBeTruthy();
     expect(screen.queryByText("Users")).toBeNull();

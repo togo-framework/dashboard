@@ -17,7 +17,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(""),
   useParams: () => ({ id: "u-2" }),
 }));
-import AdminUserDetailPage from "@/app/(app)/admin/users/[id]/page";
+import AdminUserDetailPage from "@/app/(app)/admin/users/[id]/view";
 
 const PATCH = "PATCH /api/auth/admin/users/u-2";
 // Exactly the body auth v0.10.0 provenanceConflict() sends (checked by the Go integration test).

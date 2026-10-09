@@ -92,9 +92,53 @@ The UI handles these responses (see `web/lib/admin-errors.ts`); it never retries
   impersonated session).
 - **429** on reset-password, magic-link and impersonate: a rate-limit message.
 
+### Restricting the dashboard to a role
+
+`DASHBOARD_REQUIRED_ROLE` (API environment) decides who may open the dashboard pages: everything
+under `web/app/(app)`, including `/profile`. The public auth pages (login, register, reset,
+two-factor, lock) are not guarded.
+
+- **Unset or blank (the default):** any signed-in account, the v0.9 behaviour.
+- **Set, e.g. `admin`:** only accounts holding that role. Role membership is checked against the
+  database on every request; the setting itself is read when the API boots, so changing it needs
+  a restart. An API token (PAT) and an impersonated session are refused even when the account
+  holds the role.
+
+`GET /api/dashboard/access` answers the question (204 allowed, 401 sign in, 403 forbidden, always
+`no-store, private`). The (app) layout and every (app) page ask it on the server before rendering,
+so hard loads, RSC requests, prefetches and soft navigations are all denied: signed out goes to
+`/login`, a missing role gets the forbidden state. The Next server sends only the `togo_session`
+cookie, only to the server-side `API_ORIGIN` (a bare http(s) origin, default
+`http://localhost:8080`); a timeout, an unexpected answer or a bad `API_ORIGIN` fails closed.
+
+What it does not do:
+
+- **It is not the data boundary.** It keeps pages from rendering. Each API still enforces its own
+  authorization (`/api/auth/admin/*` and the mail routes require `admin` regardless). Other routes,
+  such as `/api/_meta/*`, `/graphql` and `/events`, are not covered by this setting.
+- **It does not hide the UI code.** The compiled client bundles of the dashboard views are static
+  files under `/_next/static`, downloadable by anyone: they show the UI, endpoint and field names,
+  never data.
+- **The session cookie must reach the web origin.** The guard reads `togo_session` from the request
+  to Next, which the default same-origin `/api` rewrite provides. With a cross-origin
+  `NEXT_PUBLIC_API_ORIGIN` the cookie is set on the API's origin only, and the guard sends every
+  visitor to `/login`, even with the setting unset.
+- **An administrator impersonating someone** keeps their own session cookie in the browser, so the
+  pages still open; the impersonation token is a bearer the data APIs authorize on their own.
+- **Unsetting it is a security downgrade, not a rollback.** It reopens the dashboard to every
+  signed-in account.
+
 ### Go tests
 
 `go test -count=1 ./...` boots the real togo kernel with the real auth plugin and asserts the
 409/403/429 bodies the UI parses, and the mail routes for demoted and deleted admins. It uses
 SQLite. To run it on PostgreSQL too: `DASHBOARD_TEST_PG_URL=<url of a throwaway database>
 go test -tags dashpg -count=1 ./...`.
+
+The page guard is checked end to end by `webguard_e2e_test.go`: after `npm run build` in
+`test-harness/.build`, `go test -tags webe2e -run TestWebGuard -count=1 .` runs `next start` against
+a real kernel and requests every (app) route as a hard load, an RSC request, a prefetch and a soft
+navigation, for anonymous, forged, PAT, impersonated, non-admin and admin callers, after a demotion
+and a deletion, and with the setting unset. The routes are read from `web/app/(app)`, and
+`test-harness/tests/gate-coverage.test.ts` fails if a page there does not render inside
+`DashboardGate` or if a new kind of route file appears there.

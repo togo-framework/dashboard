@@ -40,3 +40,8 @@ jobs:
         working-directory: test-harness/.build
       - run: npm run build
         working-directory: test-harness/.build
+      # The page guard end to end: next start on the build above, against a real
+      # kernel with DASHBOARD_REQUIRED_ROLE set (webguard_e2e_test.go).
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - run: go test -tags webe2e -run TestWebGuard -count=1 .
