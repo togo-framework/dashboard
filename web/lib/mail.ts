@@ -79,6 +79,7 @@ const STEPS: TestStepId[] = ["connect", "tls", "auth", "send"];
 /** Saves the form first (the backend tests the saved config), then sends a test message. */
 export async function testMail(input: SmtpSaveInput & { to: string }): Promise<TestOutcome> {
   let error: string | undefined;
+  let stage: string | undefined;
   try {
     await saveMail(input);
     const token = await csrfToken();
@@ -88,14 +89,15 @@ export async function testMail(input: SmtpSaveInput & { to: string }): Promise<T
       headers: { "Content-Type": "application/json", "X-CSRF-Token": token },
       body: JSON.stringify({ to: input.to }),
     });
-    const d = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const d = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; stage?: string };
+    stage = d.stage;
     if (!res.ok) error = d.error || `test failed (${res.status})`;
     else if (!d.ok) error = d.error || "Test failed";
   } catch (e) {
     error = e instanceof Error ? e.message : "Test failed";
   }
   if (!error) return { ok: true, steps: STEPS.map((id) => ({ id, ok: true })) };
-  const at = STEPS.indexOf(failedStep(error));
+  const at = STEPS.indexOf(STEPS.includes(stage as TestStepId) ? (stage as TestStepId) : failedStep(error));
   return {
     ok: false,
     steps: STEPS.slice(0, at + 1).map((id, i) => (i < at ? { id, ok: true } : { id, ok: false, message: error })),
