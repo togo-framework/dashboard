@@ -22,5 +22,8 @@ export const messageOf = (e: unknown): string => (e instanceof Error ? e.message
 /** Builds an HttpError from a failed response, using the backend's `error`/`detail` text. */
 export async function httpErrorFrom(res: Response, fallback: string): Promise<HttpError> {
   const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
-  return new HttpError(data.error || data.detail || `${fallback} (${res.status})`, res.status);
+  // Server errors (5xx) can carry internal detail; show only the generic text for those.
+  const generic = `${fallback} (${res.status})`;
+  const text = res.status >= 500 ? generic : data.error || data.detail || generic;
+  return new HttpError(text, res.status);
 }

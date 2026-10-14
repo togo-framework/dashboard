@@ -3,6 +3,7 @@
 // impersonation bearer, so the server applies the borrowed account's permissions.
 "use client";
 
+import { csrfToken } from "./auth";
 import { httpErrorFrom } from "./http-error";
 import { impersonationHeaders } from "./impersonation";
 
@@ -19,41 +20,55 @@ export function resources(): string[] {
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
+// path builds /api/<table>[/<id>]. The table must be one of the configured resources and a plain
+// identifier, and the id is encoded, so a crafted value cannot redirect the call to another endpoint.
+function path(table: string, id?: string): string {
+  if (!/^[a-z][a-z0-9_]*$/.test(table) || !resources().includes(table)) {
+    throw new Error(`unknown resource: ${table}`);
+  }
+  return `${API}/api/${table}${id === undefined ? "" : `/${encodeURIComponent(id)}`}`;
+}
+
+// mutationHeaders adds the CSRF token that state-changing requests must carry.
+async function mutationHeaders(json: boolean): Promise<Record<string, string>> {
+  return { ...(json ? JSON_HEADERS : {}), ...impersonationHeaders(), "X-CSRF-Token": await csrfToken() };
+}
+
 export async function adminList(table: string): Promise<AdminRow[]> {
-  const r = await fetch(`${API}/api/${table}`, { credentials: "include", headers: impersonationHeaders() });
+  const r = await fetch(path(table), { credentials: "include", headers: impersonationHeaders() });
   if (!r.ok) throw await httpErrorFrom(r, "load failed");
   const data: unknown = await r.json();
   return Array.isArray(data) ? (data as AdminRow[]) : [];
 }
 
 export async function adminCreate(table: string, data: Record<string, unknown>): Promise<void> {
-  const r = await fetch(`${API}/api/${table}`, {
+  const r = await fetch(path(table), {
     method: "POST",
     credentials: "include",
-    headers: { ...JSON_HEADERS, ...impersonationHeaders() },
+    headers: await mutationHeaders(true),
     body: JSON.stringify(data),
   });
   if (!r.ok) throw await httpErrorFrom(r, "create failed");
 }
 
 export async function adminGet(table: string, id: string): Promise<AdminRow> {
-  const r = await fetch(`${API}/api/${table}/${id}`, { credentials: "include", headers: impersonationHeaders() });
+  const r = await fetch(path(table, id), { credentials: "include", headers: impersonationHeaders() });
   if (!r.ok) throw await httpErrorFrom(r, "load failed");
   return (await r.json()) as AdminRow;
 }
 
 export async function adminUpdate(table: string, id: string, data: Record<string, unknown>): Promise<void> {
-  const r = await fetch(`${API}/api/${table}/${id}`, {
+  const r = await fetch(path(table, id), {
     method: "PUT",
     credentials: "include",
-    headers: { ...JSON_HEADERS, ...impersonationHeaders() },
+    headers: await mutationHeaders(true),
     body: JSON.stringify(data),
   });
   if (!r.ok) throw await httpErrorFrom(r, "update failed");
 }
 
 export async function adminDelete(table: string, id: string): Promise<void> {
-  const r = await fetch(`${API}/api/${table}/${id}`, { method: "DELETE", credentials: "include", headers: impersonationHeaders() });
+  const r = await fetch(path(table, id), { method: "DELETE", credentials: "include", headers: await mutationHeaders(false) });
   if (!r.ok && r.status !== 204) throw await httpErrorFrom(r, "delete failed");
 }
 

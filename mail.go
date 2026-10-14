@@ -3,12 +3,10 @@ package dashboard
 import (
 	"context"
 	"crypto/subtle"
-	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/smtp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -48,7 +46,7 @@ type smtpConfig struct {
 }
 
 // sameConnection reports whether a and b address the same SMTP server with the same login:
-// host (case-insensitive), port (0 means the 587 default), username and TLS mode. From is not
+// host (ASCII case-insensitive), port (0 means the 587 default), username and TLS mode. From is not
 // part of the authentication identity.
 func sameConnection(a, b smtpConfig) bool {
 	port := func(p int) int {
@@ -57,14 +55,17 @@ func sameConnection(a, b smtpConfig) bool {
 		}
 		return p
 	}
-	return strings.EqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) &&
+	return asciiEqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) &&
 		port(a.Port) == port(b.Port) &&
 		strings.TrimSpace(a.Username) == strings.TrimSpace(b.Username) &&
 		a.Secure == b.Secure
 }
 
 // mailAdmin carries the kernel handle for the mail routes.
-type mailAdmin struct{ k *togo.Kernel }
+type mailAdmin struct {
+	k         *togo.Kernel
+	testLimit *rateLimiter
+}
 
 // mountMailRoutes wires the dashboard SMTP/mail admin API. It is a no-op (with a
 // warning) when the auth service isn't on the kernel, since the routes are
@@ -77,7 +78,7 @@ func mountMailRoutes(k *togo.Kernel) {
 		}
 		return
 	}
-	m := &mailAdmin{k: k}
+	m := &mailAdmin{k: k, testLimit: newRateLimiter(testMailBurst, testMailWindow)}
 	k.Router.Route("/api/dashboard/admin", func(r chi.Router) {
 		r.Use(svc.RequireRole("admin"), refuseBorrowedAdmin)
 		r.Get("/mail", m.getMail)
@@ -97,57 +98,6 @@ func (m *mailAdmin) getMail(w http.ResponseWriter, r *http.Request) {
 		cfg.Password = maskedSecret // never leak the stored secret
 	}
 	writeJSON(w, http.StatusOK, cfg)
-}
-
-func (m *mailAdmin) putMail(w http.ResponseWriter, r *http.Request) {
-	var cfg smtpConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	// A blank or masked password means "keep the stored one", but the stored secret is only ever
-	// sent to the server it was saved for. If the connection identity (host, port, username,
-	// security) changed, the caller must supply the password again: otherwise POST /mail/test
-	// would hand the old credential to whatever host was just entered.
-	if cfg.Password == "" || cfg.Password == maskedSecret {
-		cfg.Password = ""
-		if old, ok := m.loadSMTP(r.Context()); ok && old.Password != "" {
-			switch {
-			case sameConnection(old, cfg):
-				cfg.Password = old.Password
-			case strings.TrimSpace(cfg.Username) != "":
-				// Authenticated connection to a different identity: no silent carry-over.
-				writeErr(w, http.StatusBadRequest, "password required when changing SMTP host, port, username or security")
-				return
-			}
-			// A new config without a username sends no credentials, so the old password is dropped.
-		}
-	}
-	if err := m.saveSMTP(r.Context(), cfg); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (m *mailAdmin) testMail(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		To string `json:"to"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	cfg, ok := m.loadSMTP(r.Context())
-	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "SMTP is not configured — set host/port/from first"})
-		return
-	}
-	if body.To == "" {
-		body.To = cfg.From
-	}
-	if err := sendSMTP(cfg, body.To, "togo SMTP test", "This is a test email from your togo dashboard. SMTP is working."); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // ---- persistence (dashboard_kv) ------------------------------------------
@@ -200,64 +150,6 @@ func (m *mailAdmin) loadSMTP(ctx context.Context) (smtpConfig, bool) {
 func (m *mailAdmin) saveSMTP(ctx context.Context, cfg smtpConfig) error {
 	b, _ := json.Marshal(cfg)
 	return m.kvSet(ctx, mailKVKey, string(b))
-}
-
-// ---- SMTP send (stdlib net/smtp) -----------------------------------------
-
-func sendSMTP(cfg smtpConfig, to, subject, body string) error {
-	if cfg.Host == "" {
-		return fmt.Errorf("smtp host not set")
-	}
-	port := cfg.Port
-	if port == 0 {
-		port = 587
-	}
-	addr := fmt.Sprintf("%s:%d", cfg.Host, port)
-	from := cfg.From
-	if from == "" {
-		from = cfg.Username
-	}
-	msg := []byte("From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject +
-		"\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" + body + "\r\n")
-
-	var smtpAuth smtp.Auth
-	if cfg.Username != "" {
-		smtpAuth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
-	}
-
-	// Implicit TLS (SMTPS) on 465; STARTTLS upgrade is handled by smtp.SendMail.
-	if cfg.Secure && port == 465 {
-		c, err := tls.Dial("tcp", addr, &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12})
-		if err != nil {
-			return err
-		}
-		defer func() { _ = c.Close() }()
-		cl, err := smtp.NewClient(c, cfg.Host)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = cl.Close() }()
-		if smtpAuth != nil {
-			if err := cl.Auth(smtpAuth); err != nil {
-				return err
-			}
-		}
-		if err := cl.Mail(from); err != nil {
-			return err
-		}
-		if err := cl.Rcpt(to); err != nil {
-			return err
-		}
-		wc, err := cl.Data()
-		if err != nil {
-			return err
-		}
-		if _, err := wc.Write(msg); err != nil {
-			return err
-		}
-		return wc.Close()
-	}
-	return smtp.SendMail(addr, smtpAuth, from, []string{to}, msg)
 }
 
 // ---- middleware + helpers ------------------------------------------------
